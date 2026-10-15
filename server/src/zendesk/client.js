@@ -1,4 +1,5 @@
 import { redactSecrets } from '../review/output-guard.js'
+import { renderNoteHtml } from './note-html.js'
 import { getZendeskConnection, isZendeskConfigured } from './settings.js'
 
 const REQUEST_TIMEOUT_MS = 15_000
@@ -270,7 +271,7 @@ export async function postInternalNote(userId, reference, body) {
 
   const data = await request(connection, `/tickets/${ticketId}.json`, {
     method: 'PUT',
-    body: { ticket: { comment: { body: text, public: false } } },
+    body: { ticket: { comment: { html_body: renderNoteHtml(text), public: false } } },
   })
   const note = (data.audit?.events || []).find(event => event.type === 'Comment')
 

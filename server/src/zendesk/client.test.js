@@ -356,8 +356,20 @@ describe('postInternalNote', () => {
     const [, options] = global.fetch.mock.calls[0]
     expect(options.method).toBe('PUT')
     expect(JSON.parse(options.body)).toEqual({
-      ticket: { comment: { body: 'Draft: your refund is on its way.', public: false } },
+      ticket: { comment: { html_body: '<p>Draft: your refund is on its way.</p>', public: false } },
     })
+  })
+
+  it('posts the links in the note as clickable html', async () => {
+    routeFetch({ '/tickets/123.json': jsonResponse({ ticket: TICKET, audit: { events: [] } }) })
+
+    await postInternalNote(7, '123', 'Order: https://acme.com/orders/42\nUse <b>care</b>')
+
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+    const [, options] = global.fetch.mock.calls[0]
+    expect(JSON.parse(options.body).ticket.comment.html_body).toBe(
+      '<p>Order: <a href="https://acme.com/orders/42">https://acme.com/orders/42</a><br>Use &lt;b&gt;care&lt;/b&gt;</p>'
+    )
   })
 
   it('redacts secrets before the note leaves the app', async () => {
@@ -366,7 +378,7 @@ describe('postInternalNote', () => {
     const result = await postInternalNote(7, '123', 'Use sk-abcdefghijklmnopqrstuvwxyz123456 to retry')
 
     const [, options] = global.fetch.mock.calls[0]
-    expect(JSON.parse(options.body).ticket.comment.body).toBe('Use [redacted] to retry')
+    expect(JSON.parse(options.body).ticket.comment.html_body).toBe('<p>Use [redacted] to retry</p>')
     expect(result.noteId).toBeNull()
   })
 
