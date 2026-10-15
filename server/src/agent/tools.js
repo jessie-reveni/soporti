@@ -857,7 +857,11 @@ export function buildZendeskTools(userId, writes) {
         'Post an internal note on a Zendesk ticket — a private comment only agents can see, never a reply to the requester. This WRITES to Zendesk: only call it when you were asked to post a note, and in a conversation only once the user has seen the exact text and said yes. It never changes the status, the assignee or any other field of the ticket. Zendesk signs the note with the agent the connection belongs to.',
       parameters: z.object({
         ticket: ZENDESK_TICKET_PARAM,
-        body: z.string().describe('The note text, exactly as approved. Plain text; line breaks are kept.'),
+        body: z
+          .string()
+          .describe(
+            'The note text, exactly as approved. Plain text; line breaks are kept. URLs and Markdown links like [text](https://…) become clickable links; no other Markdown is rendered, so do not use bold, headings or tables.'
+          ),
       }),
       execute: async input => {
         const note = await zendesk.postInternalNote(userId, input.ticket, input.body)
