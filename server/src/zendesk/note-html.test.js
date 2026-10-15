@@ -95,4 +95,14 @@ describe('renderNoteHtml', () => {
       '<p>list:<br>&nbsp;&nbsp;- one</p><p>&nbsp;&nbsp;&nbsp;&nbsp;indented&nbsp; twice</p>'
     )
   })
+
+  it('keeps square brackets inside a bare url', () => {
+    expect(renderNoteHtml('See https://a.com/?ids[]=1&f[status]=open')).toBe(
+      '<p>See <a href="https://a.com/?ids[]=1&amp;f[status]=open">https://a.com/?ids[]=1&amp;f[status]=open</a></p>'
+    )
+  })
+
+  it('preserves a tab in the middle of a line', () => {
+    expect(renderNoteHtml('a\tb')).toBe('<p>a&nbsp;&nbsp;&nbsp; b</p>')
+  })
 })

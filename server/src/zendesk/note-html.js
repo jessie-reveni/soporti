@@ -1,11 +1,11 @@
 const LINE_ENDING_RE = /\r\n?/g
 const PARAGRAPH_BREAK_RE = /\n(?:[ \t]*\n)+/
-const INDENT_RE = /^[ \t]*/
+const INDENT_RE = /^ */
 const TAB_RE = /\t/g
 const SPACE_RUN_RE = / {2,}/g
-const TAB_WIDTH = 4
+const TAB_SPACES = '    '
 const LINK_RE =
-  /\[([^\]\n]+)\]\((https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+)\)|(https?:\/\/(?:[^\s<>"'`()[\]]|\([^\s()<>"'`]*\))+(?<![.,;:!?]))/gi
+  /\[([^\]\n]+)\]\((https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+)\)|(https?:\/\/(?:[^\s<>"'`()[\]]|\([^\s()<>"'`]*\)|\[[^\s[\]<>"'`]*\](?!\())+(?<![.,;:!?]))/gi
 const HTML_ESCAPE_RE = /[&<>"']/g
 const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
 
@@ -18,7 +18,7 @@ function preserveSpaces(html) {
 }
 
 function renderIndent(indent) {
-  return '&nbsp;'.repeat(indent.replace(TAB_RE, ' '.repeat(TAB_WIDTH)).length)
+  return '&nbsp;'.repeat(indent.length)
 }
 
 function renderLink(label, url) {
@@ -26,8 +26,9 @@ function renderLink(label, url) {
 }
 
 function renderLine(rawLine) {
-  const indent = rawLine.match(INDENT_RE)[0]
-  const line = rawLine.slice(indent.length)
+  const expanded = rawLine.replace(TAB_RE, TAB_SPACES)
+  const indent = expanded.match(INDENT_RE)[0]
+  const line = expanded.slice(indent.length)
   let html = ''
   let cursor = 0
 
