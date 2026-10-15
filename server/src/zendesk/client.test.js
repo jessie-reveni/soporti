@@ -358,6 +358,7 @@ describe('postInternalNote', () => {
     expect(JSON.parse(options.body)).toEqual({
       ticket: { comment: { html_body: '<p>Draft: your refund is on its way.</p>', public: false } },
     })
+    expect(JSON.parse(options.body).ticket.comment.body).toBeUndefined()
   })
 
   it('posts the links in the note as clickable html', async () => {

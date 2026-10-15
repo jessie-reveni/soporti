@@ -1,6 +1,11 @@
 const LINE_ENDING_RE = /\r\n?/g
-const PARAGRAPH_BREAK_RE = /\n\s*\n/
-const LINK_RE = /\[([^\]\n]+)\]\((https?:\/\/[^\s()<>]+)\)|(https?:\/\/[^\s<>"'`]*[^\s<>"'`.,;:!?)\]])/g
+const PARAGRAPH_BREAK_RE = /\n(?:[ \t]*\n)+/
+const INDENT_RE = /^[ \t]*/
+const TAB_RE = /\t/g
+const SPACE_RUN_RE = / {2,}/g
+const TAB_WIDTH = 4
+const LINK_RE =
+  /\[([^\]\n]+)\]\((https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+)\)|(https?:\/\/(?:[^\s<>"'`()[\]]|\([^\s()<>"'`]*\))+(?<![.,;:!?]))/gi
 const HTML_ESCAPE_RE = /[&<>"']/g
 const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
 
@@ -8,11 +13,21 @@ function escapeHtml(text) {
   return text.replace(HTML_ESCAPE_RE, char => HTML_ESCAPES[char])
 }
 
+function preserveSpaces(html) {
+  return html.replace(SPACE_RUN_RE, run => `${'&nbsp;'.repeat(run.length - 1)} `)
+}
+
+function renderIndent(indent) {
+  return '&nbsp;'.repeat(indent.replace(TAB_RE, ' '.repeat(TAB_WIDTH)).length)
+}
+
 function renderLink(label, url) {
   return `<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`
 }
 
-function renderLine(line) {
+function renderLine(rawLine) {
+  const indent = rawLine.match(INDENT_RE)[0]
+  const line = rawLine.slice(indent.length)
   let html = ''
   let cursor = 0
 
@@ -22,7 +37,7 @@ function renderLine(line) {
     cursor = match.index + whole.length
   }
 
-  return html + escapeHtml(line.slice(cursor))
+  return renderIndent(indent) + preserveSpaces(html + escapeHtml(line.slice(cursor)))
 }
 
 function renderParagraph(paragraph) {
@@ -30,5 +45,5 @@ function renderParagraph(paragraph) {
 }
 
 export function renderNoteHtml(text) {
-  return text.replace(LINE_ENDING_RE, '\n').split(PARAGRAPH_BREAK_RE).map(renderParagraph).join('')
+  return text.trim().replace(LINE_ENDING_RE, '\n').split(PARAGRAPH_BREAK_RE).map(renderParagraph).join('')
 }

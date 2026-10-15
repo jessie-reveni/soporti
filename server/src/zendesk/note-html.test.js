@@ -40,4 +40,59 @@ describe('renderNoteHtml', () => {
     expect(renderNoteHtml('one\ntwo\n\nthree')).toBe('<p>one<br>two</p><p>three</p>')
     expect(renderNoteHtml('one\r\ntwo\r\n\r\nthree')).toBe('<p>one<br>two</p><p>three</p>')
   })
+
+  it('keeps balanced parentheses in markdown and bare urls', () => {
+    const url = 'https://en.wikipedia.org/wiki/Foo_(bar)'
+
+    expect(renderNoteHtml(`[x](${url})`)).toBe(`<p><a href="${url}">x</a></p>`)
+    expect(renderNoteHtml(`See ${url}`)).toBe(`<p>See <a href="${url}">${url}</a></p>`)
+  })
+
+  it('leaves a closing parenthesis or bracket around a url outside the link', () => {
+    expect(renderNoteHtml('(see https://a.com)')).toBe('<p>(see <a href="https://a.com">https://a.com</a>)</p>')
+    expect(renderNoteHtml('[see https://a.com]')).toBe('<p>[see <a href="https://a.com">https://a.com</a>]</p>')
+  })
+
+  it('links several urls on one line', () => {
+    expect(renderNoteHtml('https://a.com and https://b.com, [c](https://c.com)')).toBe(
+      '<p><a href="https://a.com">https://a.com</a> and <a href="https://b.com">https://b.com</a>, <a href="https://c.com">c</a></p>'
+    )
+  })
+
+  it('links a bare url immediately followed by a markdown link separately', () => {
+    expect(renderNoteHtml('https://a.com[x](https://b.com)')).toBe(
+      '<p><a href="https://a.com">https://a.com</a><a href="https://b.com">x</a></p>'
+    )
+  })
+
+  it('links a markdown link whose label is a url', () => {
+    expect(renderNoteHtml('[https://a.com](https://a.com)')).toBe('<p><a href="https://a.com">https://a.com</a></p>')
+  })
+
+  it('escapes quotes inside a markdown url', () => {
+    expect(renderNoteHtml(`[x](https://a.com/?q="1"&r='2')`)).toBe(
+      '<p><a href="https://a.com/?q=&quot;1&quot;&amp;r=&#39;2&#39;">x</a></p>'
+    )
+  })
+
+  it('links http and uppercase schemes', () => {
+    expect(renderNoteHtml('http://a.com HTTPS://B.COM')).toBe(
+      '<p><a href="http://a.com">http://a.com</a> <a href="HTTPS://B.COM">HTTPS://B.COM</a></p>'
+    )
+  })
+
+  it('treats three or more newlines as one paragraph break', () => {
+    expect(renderNoteHtml('one\n\n\n\ntwo')).toBe('<p>one</p><p>two</p>')
+  })
+
+  it('renders empty and whitespace-only input as an empty paragraph', () => {
+    expect(renderNoteHtml('')).toBe('<p></p>')
+    expect(renderNoteHtml('   ')).toBe('<p></p>')
+  })
+
+  it('preserves indentation and runs of spaces', () => {
+    expect(renderNoteHtml('list:\n  - one\n\n\tindented  twice')).toBe(
+      '<p>list:<br>&nbsp;&nbsp;- one</p><p>&nbsp;&nbsp;&nbsp;&nbsp;indented&nbsp; twice</p>'
+    )
+  })
 })
