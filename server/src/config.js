@@ -88,7 +88,7 @@ const config = {
   },
 
   schedules: {
-    maxTurns: parseInt(process.env.SCHEDULE_MAX_TURNS || '100', 10) || 100,
+    maxTurns: parseInt(process.env.SCHEDULE_MAX_TURNS || '500', 10) || 500,
   },
 
   review: {
