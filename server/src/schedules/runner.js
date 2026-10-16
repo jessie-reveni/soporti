@@ -1,5 +1,7 @@
 import { run } from '@openai/agents'
+import { resolveModelForAgent } from '../llm/model.js'
 import { createAgent } from '../agent/assistant.js'
+import { buildTurnLimitPrompt } from '../agent/system-prompt.js'
 import { buildUserTurn } from '../agent/user-turn.js'
 import { buildSourcesFooter, isYoloMode } from '../agent/sources.js'
 import config from '../config.js'
@@ -8,6 +10,12 @@ import { searchSimilarCases } from '../knowledge/client.js'
 import { toolCallsFromResult } from '../agent/run-items.js'
 import { trackAgentRun } from '../agent/run-tracking.js'
 import { AGENT_CHANNEL_SCHEDULE, EMPTY_ANSWER_ERROR } from '../constants.js'
+
+const WRAP_UP_TURNS = 1
+
+function buildTurnLimitNotice(maxTurns) {
+  return `\n\n---\n_Stopped at the turn limit of ${maxTurns} turns: some items may not have been handled._`
+}
 
 function extractText(result) {
   const output = result?.finalOutput
@@ -36,8 +44,29 @@ export async function runSchedule(schedule, conversationStore) {
       userId: schedule.userId,
       onNestedToolCall: call => nestedToolCalls.push(call),
       onNestedUsage: usage => nestedUsage.push(usage),
+      unattended: true,
     })
     const agentInput = buildUserTurn(schedule.question, { similarCases })
+
+    const { maxTurns } = config.schedules
+    let wrappedUp = false
+
+    async function wrapUp({ context, runData }) {
+      try {
+        const { finalAnswerModelSettings } = await resolveModelForAgent()
+        const wrapUpResult = await run(
+          agent.clone({ modelSettings: finalAnswerModelSettings }),
+          [...runData.history, { role: 'user', content: buildTurnLimitPrompt(maxTurns) }],
+          { context, maxTurns: WRAP_UP_TURNS }
+        )
+        wrappedUp = true
+
+        return { finalOutput: wrapUpResult.finalOutput }
+      } catch (err) {
+        console.error('[schedules] Failed to wrap up at the turn limit:', err)
+        return undefined
+      }
+    }
 
     const { result } = await trackAgentRun(
       {
@@ -47,18 +76,20 @@ export async function runSchedule(schedule, conversationStore) {
         nestedToolCalls,
         failureReason: runResult => (extractText(runResult).trim().length === 0 ? EMPTY_ANSWER_ERROR : null),
       },
-      () => run(agent, agentInput, { maxTurns: config.agent.maxIterations, session })
+      () => run(agent, agentInput, { maxTurns, session, errorHandlers: { maxTurns: wrapUp } })
     )
 
     const answer = extractText(result)
     const footer = isYoloMode(sources) ? buildSourcesFooter([...toolCallsFromResult(result), ...nestedToolCalls]) : ''
 
+    const notice = wrappedUp ? buildTurnLimitNotice(maxTurns) : ''
+
     await conversationStore.saveTurn(conversationId, {
-      lastResponseId: result?.lastResponseId,
+      lastResponseId: wrappedUp ? null : result?.lastResponseId,
       session,
       uiMessages: [
         { role: 'user', parts: [{ type: 'text', content: schedule.question }] },
-        { role: 'assistant', parts: [{ type: 'text', content: `${answer}${footer}` }] },
+        { role: 'assistant', parts: [{ type: 'text', content: `${answer}${notice}${footer}` }] },
       ],
     })
 

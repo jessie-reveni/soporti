@@ -1288,11 +1288,21 @@ describe('buildZendeskTools', () => {
     zendeskMod.searchTickets.mockResolvedValue({ query: 'tags:refund', count: 0, tickets: [], truncated: false })
 
     const [, searchTickets] = buildZendeskTools(7, false)
-    const result = await searchTickets.execute({ query: 'tags:refund' })
+    const result = await searchTickets.execute({ query: 'tags:refund', page: null })
 
     expect(JSON.parse(result)).toEqual({ query: 'tags:refund', count: 0, tickets: [], truncated: false })
     expect(zendeskMod.searchTickets).toHaveBeenCalledTimes(1)
-    expect(zendeskMod.searchTickets).toHaveBeenCalledWith(7, 'tags:refund')
+    expect(zendeskMod.searchTickets).toHaveBeenCalledWith(7, 'tags:refund', 1)
+  })
+
+  it('forwards the requested page of a search', async () => {
+    const zendeskMod = await import('../zendesk/client.js')
+    zendeskMod.searchTickets.mockResolvedValue({ query: 'tags:refund', count: 0, tickets: [], truncated: false })
+
+    const [, searchTickets] = buildZendeskTools(7, false)
+    await searchTickets.execute({ query: 'tags:refund', page: 2 })
+
+    expect(zendeskMod.searchTickets).toHaveBeenCalledWith(7, 'tags:refund', 2)
   })
 
   it('lists the views of the user the tools were built for', async () => {
@@ -1312,11 +1322,21 @@ describe('buildZendeskTools', () => {
     zendeskMod.listViewTickets.mockResolvedValue({ viewId: '42', tickets: [], truncated: false })
 
     const [, , , listTickets] = buildZendeskTools(7, false)
-    const result = await listTickets.execute({ viewId: '42' })
+    const result = await listTickets.execute({ viewId: '42', cursor: null })
 
     expect(JSON.parse(result)).toEqual({ viewId: '42', tickets: [], truncated: false })
     expect(zendeskMod.listViewTickets).toHaveBeenCalledTimes(1)
-    expect(zendeskMod.listViewTickets).toHaveBeenCalledWith(7, '42')
+    expect(zendeskMod.listViewTickets).toHaveBeenCalledWith(7, '42', null)
+  })
+
+  it('forwards the cursor of the next page of a view', async () => {
+    const zendeskMod = await import('../zendesk/client.js')
+    zendeskMod.listViewTickets.mockResolvedValue({ viewId: '42', tickets: [], truncated: false })
+
+    const [, , , listTickets] = buildZendeskTools(7, false)
+    await listTickets.execute({ viewId: '42', cursor: 'abc' })
+
+    expect(zendeskMod.listViewTickets).toHaveBeenCalledWith(7, '42', 'abc')
   })
 
   it('posts the note body exactly as given', async () => {

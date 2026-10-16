@@ -194,7 +194,7 @@ const ZENDESK_WRITE_SECTION = `### Posting internal notes
 
 You can also post an internal note with zendesk_post_internal_note — a private comment for the team, never seen by the requester. It is the only thing you can write in Zendesk, so treat it as a deliberate action.
 
-- **Only post when you were asked to.** In a conversation, show the exact note first and wait for a yes. In a run with nobody to ask — a scheduled question or a skill that says to post the draft — post it when the request says so.
+- **Only post when you were asked to.** In an unattended run, or when a skill says to post the draft, post it as soon as the request says so. Otherwise show the exact note first and wait for a yes.
 - **Write it for the agent who will answer**: the draft reply, then the evidence behind it (records, policies, links), clearly separated. Never invent an order, a refund or a policy nobody found.
 - **Report what you did.** Give the ticket url once the note is posted.`
 
@@ -436,6 +436,20 @@ The user has activated a skill for this conversation. Its instructions are in th
 
 Read that section and decide how to respond according to it. If the skill tells you to ask questions instead of answering, or to wait for the user before doing any work, then that is what this turn requires, even though the rules above would normally have you act immediately.`
 
+const UNATTENDED_RUN_SECTION = `## This run is unattended
+
+Nobody is following this run: your final answer is saved and read later. The request itself is the go-ahead for every write it asks for, so do not draft first and do not wait for a yes. Write only what was asked, and only from evidence you found with your tools.
+
+Never stop to ask a question. Take the most reasonable reading of the request and say which one you took.
+
+Cover every item, not a sample. When a list says there is more, fetch the next page. When several items are independent, call the tools for all of them in the same turn.
+
+End with a report: each item with its url and what was done, what you skipped and why, any write that failed, and, if a write was asked for but no tool exists for it, say so.`
+
+export function buildTurnLimitPrompt(maxTurns) {
+  return `You have used all ${maxTurns} turns, you cannot call tools. Write your final report now: what you did on each item, which you did not get to, and anything that failed.`
+}
+
 export function buildBasePrompt(
   policy = null,
   {
@@ -445,6 +459,7 @@ export function buildBasePrompt(
     rendersMarkdownImages = false,
     hasRepoTools = true,
     toolNames = new Set(),
+    unattended = false,
   } = {}
 ) {
   const unrestricted = !policy || policy.unrestricted
@@ -455,6 +470,7 @@ export function buildBasePrompt(
   parts.push(CORE_GUIDELINES)
   if (canRenderArtifacts) parts.push(ARTIFACTS_SECTION)
   if (hasActiveSkills) parts.push(SKILL_OVERRIDE_NOTICE)
+  if (unattended) parts.push(UNATTENDED_RUN_SECTION)
 
   for (const id of available) {
     const section = INTEGRATION_PROMPT_SECTIONS[id]
@@ -484,7 +500,7 @@ const INTEGRATION_INSTRUCTIONS = {
   figma:
     'The user has enabled the **Figma** integration. Use get_figma_file, get_figma_node and get_figma_screenshot to look at the designs they link — pass the figma.com URL straight to the tools — and list_figma_comments for the feedback on them.',
   zendesk:
-    'The user has enabled the **Zendesk** integration. Use zendesk_get_ticket to read the tickets they share — by id or url — zendesk_search_tickets to find tickets, and zendesk_list_views with zendesk_list_view_tickets to see the tickets in a view; cite the ticket url, and never reply to the requester or change a ticket.',
+    "The user has enabled the **Zendesk** integration. Use zendesk_get_ticket to read the tickets they share — by id or url — zendesk_search_tickets to find tickets, and zendesk_list_views with zendesk_list_view_tickets to see the tickets in a view; cite the ticket url, and never reply to the requester or change a ticket's status, assignee or fields.",
   'google-drive':
     'The user has enabled the **Google Drive** integration. Use search_drive_files and list_drive_files to find documentation and get_drive_file to read it; cite the document url in your answer. Be proactive — search immediately when the Drive docs might answer the question.',
 }

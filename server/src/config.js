@@ -87,6 +87,10 @@ const config = {
     cleanupMs: parseInt(process.env.REPO_POOL_CLEANUP_MS || String(5 * 60_000), 10),
   },
 
+  schedules: {
+    maxTurns: parseInt(process.env.SCHEDULE_MAX_TURNS || '500', 10) || 500,
+  },
+
   review: {
     label: process.env.REVIEW_LABEL || 'soporti-review',
     reviewerLogin: process.env.REVIEW_REVIEWER_LOGIN || '',

@@ -37,6 +37,7 @@ export async function createAgent(
     onNestedToolCall = null,
     onNestedToolResult = null,
     onNestedUsage = null,
+    unattended = false,
   } = {}
 ) {
   const policy = buildSourcePolicy(selectedSources)
@@ -125,6 +126,7 @@ export async function createAgent(
       rendersMarkdownImages: Boolean(conversationId),
       hasRepoTools,
       toolNames: parentToolNames,
+      unattended,
     }),
   ]
   parts.push(profileInstructions, `## Current context\n\n${sourceInstructions}`)
