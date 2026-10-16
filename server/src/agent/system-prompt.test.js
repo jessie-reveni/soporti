@@ -3,6 +3,7 @@ import {
   VALID_PROFILES,
   DEFAULT_PROFILE,
   buildBasePrompt,
+  buildTurnLimitPrompt,
   buildProfileInstructions,
   buildSourceInstructions,
   buildSimilarCasesPrompt,
@@ -486,7 +487,20 @@ describe('buildSourceInstructions', () => {
     const result = buildSourceInstructions(['integration:zendesk'], { zendeskConfigured: true })
 
     expect(result).toContain('zendesk_get_ticket')
-    expect(result).toContain('never reply to the requester')
+    expect(result).toContain('never reply to the requester or change a ticket')
+    expect(result).toContain('status, assignee or fields')
+  })
+
+  it('adds the unattended section only for an unattended run', () => {
+    expect(buildBasePrompt(null, { unattended: true })).toContain('## This run is unattended')
+    expect(buildBasePrompt(null)).not.toContain('## This run is unattended')
+  })
+
+  it('asks for a final report once the turns are used up', () => {
+    const result = buildTurnLimitPrompt(42)
+
+    expect(result).toContain('all 42 turns')
+    expect(result).toContain('final report')
   })
 
   it('handles selections with only integrations', () => {

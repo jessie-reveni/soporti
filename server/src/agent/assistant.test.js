@@ -555,6 +555,14 @@ describe('createAgent with Zendesk', () => {
     expect(agent.instructions).not.toContain('### Posting internal notes')
   })
 
+  it('tells the agent the run is unattended only when asked to', async () => {
+    const unattended = await createAgent(['integration:zendesk'], 'support', { userId: 7, unattended: true })
+    const attended = await createAgent(['integration:zendesk'], 'support', { userId: 7 })
+
+    expect(unattended.instructions).toContain('## This run is unattended')
+    expect(attended.instructions).not.toContain('## This run is unattended')
+  })
+
   it('leaves Zendesk unconfigured for a user who has not connected it', async () => {
     const agent = await createAgent(['integration:zendesk'], 'support', { userId: 8 })
 

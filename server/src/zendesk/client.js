@@ -6,6 +6,9 @@ const REQUEST_TIMEOUT_MS = 15_000
 const PAGE_SIZE = 100
 const MAX_COMMENT_PAGES = 5
 const MAX_VIEW_PAGES = 5
+const MAX_SEARCH_PAGE = 10
+const SEARCH_PAGE_LIMIT_ERROR =
+  'Zendesk search only pages through the first 1,000 results: narrow the query (by date, status or tag) to reach the rest.'
 const MAX_COMMENT_CHARS = 10_000
 const MAX_ERROR_CHARS = 300
 const TICKET_URL_RE = /^(?:https?:\/\/)?([a-z0-9-]+)\.zendesk\.com\/.*\/tickets\/(\d{1,20})(?:\D.*)?$/i
@@ -232,33 +235,37 @@ export async function listViews(userId) {
   }
 }
 
-export async function listViewTickets(userId, viewId) {
+export async function listViewTickets(userId, viewId, cursor = null) {
   const connection = await requireConnection(userId)
   const resolvedViewId = parseViewId(viewId)
 
-  const data = await request(connection, pagePath(`/views/${resolvedViewId}/tickets.json`, null))
+  const data = await request(connection, pagePath(`/views/${resolvedViewId}/tickets.json`, cursor))
 
   return {
     viewId: resolvedViewId,
     tickets: await summarizeTickets(connection, data.tickets || []),
     truncated: Boolean(data.meta?.has_more),
+    nextCursor: nextCursor(data),
   }
 }
 
-export async function searchTickets(userId, query) {
+export async function searchTickets(userId, query, page = 1) {
   const connection = await requireConnection(userId)
   const trimmed = String(query ?? '').trim()
 
   if (!trimmed) throw new Error('A Zendesk search needs a query.')
+  if (!Number.isInteger(page) || page < 1 || page > MAX_SEARCH_PAGE) throw new Error(SEARCH_PAGE_LIMIT_ERROR)
 
   const fullQuery = encodeURIComponent(`type:ticket ${trimmed}`)
-  const data = await request(connection, `/search.json?query=${fullQuery}&per_page=${PAGE_SIZE}`)
+  const data = await request(connection, `/search.json?query=${fullQuery}&per_page=${PAGE_SIZE}&page=${page}`)
 
   return {
     query: trimmed,
     count: data.count,
+    page,
     tickets: await summarizeTickets(connection, data.results || []),
     truncated: Boolean(data.next_page),
+    nextPage: data.next_page && page < MAX_SEARCH_PAGE ? page + 1 : null,
   }
 }
 

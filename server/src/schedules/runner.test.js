@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@openai/agents', () => ({ run: vi.fn() }))
+vi.mock('../config.js', () => ({ default: { agent: { maxIterations: 7 }, schedules: { maxTurns: 42 } } }))
+vi.mock('../llm/model.js', () => ({ resolveModelForAgent: vi.fn() }))
 vi.mock('../agent/assistant.js', () => ({ createAgent: vi.fn() }))
 vi.mock('../knowledge/client.js', () => ({ searchSimilarCases: vi.fn() }))
 vi.mock('../db/users.js', () => ({ getCustomInstructions: vi.fn() }))
 vi.mock('../db/agent-runs.js', () => ({ recordAgentRun: vi.fn() }))
 
 const { run } = await import('@openai/agents')
+const { resolveModelForAgent } = await import('../llm/model.js')
 const { createAgent } = await import('../agent/assistant.js')
 const { searchSimilarCases } = await import('../knowledge/client.js')
 const { getCustomInstructions } = await import('../db/users.js')
@@ -33,7 +36,8 @@ function makeStore() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  createAgent.mockResolvedValue({ name: 'agent' })
+  createAgent.mockResolvedValue({ name: 'agent', clone: vi.fn() })
+  resolveModelForAgent.mockResolvedValue({ finalAnswerModelSettings: { toolChoice: 'none' } })
   searchSimilarCases.mockResolvedValue([])
   getCustomInstructions.mockResolvedValue('Be brief.')
   run.mockResolvedValue({ finalOutput: 'Two payments failed.', lastResponseId: 'resp_1', newItems: [] })
@@ -67,10 +71,12 @@ describe('runSchedule', () => {
       userId: 7,
       onNestedToolCall: expect.any(Function),
       onNestedUsage: expect.any(Function),
+      unattended: true,
     })
-    expect(run).toHaveBeenCalledWith({ name: 'agent' }, 'Failed payments in the last 24h', {
-      maxTurns: expect.any(Number),
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ name: 'agent' }), 'Failed payments in the last 24h', {
+      maxTurns: 42,
       session: { id: 'session' },
+      errorHandlers: { maxTurns: expect.any(Function) },
     })
   })
 
@@ -122,6 +128,7 @@ describe('runSchedule', () => {
       userId: 7,
       onNestedToolCall: expect.any(Function),
       onNestedUsage: expect.any(Function),
+      unattended: true,
     })
   })
 
@@ -208,6 +215,64 @@ describe('runSchedule', () => {
       usage: { requests: 20, inputTokens: 400_000, outputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0 },
       durationMs: expect.any(Number),
       tools: [],
+    })
+  })
+
+  describe('at the turn limit', () => {
+    async function runUntilTurnLimit(store, { wrapUpResult }) {
+      const clonedAgent = { name: 'wrap-up-agent' }
+      const agent = { name: 'agent', clone: vi.fn().mockReturnValue(clonedAgent) }
+      createAgent.mockResolvedValue(agent)
+      run.mockImplementation(async (target, input, options) => {
+        if (target === clonedAgent) return wrapUpResult()
+        const handled = await options.errorHandlers.maxTurns({ context: { id: 'ctx' }, runData: { history: ['h1'] } })
+        return { ...handled, lastResponseId: 'resp_1' }
+      })
+
+      await runSchedule(SCHEDULE, store)
+
+      return { agent, clonedAgent }
+    }
+
+    it('wraps up with a final report and saves it with a notice', async () => {
+      const store = makeStore()
+
+      const { agent, clonedAgent } = await runUntilTurnLimit(store, {
+        wrapUpResult: () => ({ finalOutput: 'Handled 3 of 5.' }),
+      })
+
+      expect(agent.clone).toHaveBeenCalledWith({ modelSettings: { toolChoice: 'none' } })
+      expect(run).toHaveBeenCalledWith(
+        clonedAgent,
+        ['h1', { role: 'user', content: expect.stringContaining('all 42 turns') }],
+        { context: { id: 'ctx' }, maxTurns: 1 }
+      )
+      const [, turn] = store.saveTurn.mock.calls[0]
+      expect(turn.lastResponseId).toBeNull()
+      expect(turn.uiMessages[1].parts[0].content).toBe(
+        'Handled 3 of 5.\n\n---\n_Stopped at the turn limit of 42 turns: some items may not have been handled._'
+      )
+      expect(store.deleteWeb).not.toHaveBeenCalled()
+    })
+
+    it('logs and lets the run fail when the wrap-up fails', async () => {
+      const store = makeStore()
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const wrapUpError = new Error('model unavailable')
+      const clonedAgent = { name: 'wrap-up-agent' }
+      createAgent.mockResolvedValue({ name: 'agent', clone: vi.fn().mockReturnValue(clonedAgent) })
+      run.mockImplementation(async (target, input, options) => {
+        if (target === clonedAgent) throw wrapUpError
+        const handled = await options.errorHandlers.maxTurns({ context: {}, runData: { history: [] } })
+        if (handled === undefined) throw new Error('Max turns exceeded')
+        return handled
+      })
+
+      await expect(runSchedule(SCHEDULE, store)).rejects.toThrow('Max turns exceeded')
+
+      expect(errorSpy).toHaveBeenCalledWith('[schedules] Failed to wrap up at the turn limit:', wrapUpError)
+      expect(store.deleteWeb).toHaveBeenCalledWith(CONVERSATION_ID, 7)
+      errorSpy.mockRestore()
     })
   })
 })

@@ -266,6 +266,7 @@ describe('listViewTickets', () => {
     expect(result).toEqual({
       viewId: '77',
       truncated: true,
+      nextCursor: null,
       tickets: [1, 2].map(id => ({
         id,
         url: `https://acme.zendesk.com/agent/tickets/${id}`,
@@ -283,8 +284,23 @@ describe('listViewTickets', () => {
 
     const result = await listViewTickets(7, '77')
 
-    expect(result).toEqual({ viewId: '77', tickets: [], truncated: false })
+    expect(result).toEqual({ viewId: '77', tickets: [], truncated: false, nextCursor: null })
     expect(global.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('requests the page after the given cursor and returns the cursor of the next one', async () => {
+    routeFetch({
+      '/views/77/tickets.json': jsonResponse({
+        tickets: [],
+        meta: { has_more: true, after_cursor: 'abc/def=' },
+      }),
+    })
+
+    const result = await listViewTickets(7, '77', 'cur sor')
+
+    expect(requestedPaths()).toEqual(['/views/77/tickets.json?page[size]=100&page[after]=cur%20sor'])
+    expect(result.truncated).toBe(true)
+    expect(result.nextCursor).toBe('abc/def=')
   })
 
   it('refuses anything that is not a numeric view id and points to the list of views', async () => {
@@ -306,7 +322,9 @@ describe('searchTickets', () => {
     expect(result).toEqual({
       query: 'refund status<solved',
       count: 240,
+      page: 1,
       truncated: true,
+      nextPage: 2,
       tickets: [
         {
           id: 5,
@@ -319,8 +337,36 @@ describe('searchTickets', () => {
       ],
     })
     expect(requestedPaths()[0]).toBe(
-      `/search.json?query=${encodeURIComponent('type:ticket refund status<solved')}&per_page=100`
+      `/search.json?query=${encodeURIComponent('type:ticket refund status<solved')}&per_page=100&page=1`
     )
+  })
+
+  it('requests the page asked for and points to the next one', async () => {
+    routeFetch({ '/search.json': jsonResponse({ results: [], count: 900, next_page: 'https://next' }) })
+
+    const result = await searchTickets(7, 'refund', 3)
+
+    expect(requestedPaths()[0]).toBe(
+      `/search.json?query=${encodeURIComponent('type:ticket refund')}&per_page=100&page=3`
+    )
+    expect(result.page).toBe(3)
+    expect(result.nextPage).toBe(4)
+  })
+
+  it('stops offering pages after the tenth even when Zendesk has more', async () => {
+    routeFetch({ '/search.json': jsonResponse({ results: [], count: 5000, next_page: 'https://next' }) })
+
+    const result = await searchTickets(7, 'refund', 10)
+
+    expect(result.truncated).toBe(true)
+    expect(result.nextPage).toBeNull()
+  })
+
+  it('refuses a page outside the first 1,000 results', async () => {
+    for (const page of [0, 11, 1.5]) {
+      await expect(searchTickets(7, 'refund', page)).rejects.toThrow(/first 1,000 results: narrow the query/)
+    }
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 
   it('reports a search without matches as complete', async () => {
@@ -328,7 +374,14 @@ describe('searchTickets', () => {
 
     const result = await searchTickets(7, 'requester:nobody@example.com')
 
-    expect(result).toEqual({ query: 'requester:nobody@example.com', count: 0, tickets: [], truncated: false })
+    expect(result).toEqual({
+      query: 'requester:nobody@example.com',
+      count: 0,
+      page: 1,
+      tickets: [],
+      truncated: false,
+      nextPage: null,
+    })
     expect(global.fetch).toHaveBeenCalledTimes(1)
   })
 

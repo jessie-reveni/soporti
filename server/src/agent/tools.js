@@ -810,16 +810,24 @@ export function buildZendeskTools(userId, writes) {
     tool({
       name: 'zendesk_search_tickets',
       description:
-        'Search the Zendesk tickets the user\'s connection can see with Zendesk search syntax, and get their id, url, subject, requester, status and last update. Combine free text with filters such as `status:open`, `status<solved`, `requester:carla@example.com`, `assignee:me`, `tags:refund`, `group:"Tier 2"`, `created>2026-09-01` or `updated<7days`, and sort with `order_by:updated_at sort:desc`. `count` is the total number of matches; at most 100 tickets are returned, and when `truncated` is true there are more, so narrow the query instead of presenting the list as complete. Read a ticket with zendesk_get_ticket before answering about it.',
+        'Search the Zendesk tickets the user\'s connection can see with Zendesk search syntax, and get their id, url, subject, requester, status and last update. Combine free text with filters such as `status:open`, `status<solved`, `requester:carla@example.com`, `assignee:me`, `tags:refund`, `group:"Tier 2"`, `created>2026-09-01` or `updated<7days`, and sort with `order_by:updated_at sort:desc`. `count` is the total number of matches; each call returns at most 100 tickets, and when `truncated` is true there are more: fetch the next page by passing `nextPage` as `page` before treating the list as complete. Zendesk search stops after 1,000 results, so narrow the query by date, status or tag to go beyond that. Read a ticket with zendesk_get_ticket before answering about it.',
       parameters: z.object({
         query: z
           .string()
           .describe(
             'Zendesk search query without `type:ticket`, e.g. "refund status<solved order_by:updated_at sort:desc".'
           ),
+        page: z
+          .number()
+          .int()
+          .nullable()
+          .default(null)
+          .describe(
+            'Page of results to fetch (1 to 10); pass `nextPage` from the previous result. Null for the first.'
+          ),
       }),
       execute: async input => {
-        const result = await zendesk.searchTickets(userId, input.query)
+        const result = await zendesk.searchTickets(userId, input.query, input.page ?? 1)
         return JSON.stringify(result)
       },
     }),
@@ -836,12 +844,17 @@ export function buildZendeskTools(userId, writes) {
     tool({
       name: 'zendesk_list_view_tickets',
       description:
-        'List the tickets in a Zendesk view with their id, url, subject, requester, status and last update. Needs the numeric view id: when the user names a view, find its id with zendesk_list_views first. Returns at most 100 tickets: when `truncated` is true the view holds more, so do not present the list as complete.',
+        'List the tickets in a Zendesk view with their id, url, subject, requester, status and last update. Needs the numeric view id: when the user names a view, find its id with zendesk_list_views first. Each call returns at most 100 tickets: when `truncated` is true the view holds more, so fetch the next page by passing `nextCursor` as `cursor` before treating the list as complete.',
       parameters: z.object({
         viewId: z.string().describe('Numeric Zendesk view id, e.g. "360001234567".'),
+        cursor: z
+          .string()
+          .nullable()
+          .default(null)
+          .describe('`nextCursor` from the previous result to fetch the next page. Null for the first.'),
       }),
       execute: async input => {
-        const result = await zendesk.listViewTickets(userId, input.viewId)
+        const result = await zendesk.listViewTickets(userId, input.viewId, input.cursor)
         return JSON.stringify(result)
       },
     }),
@@ -854,7 +867,7 @@ export function buildZendeskTools(userId, writes) {
     tool({
       name: 'zendesk_post_internal_note',
       description:
-        'Post an internal note on a Zendesk ticket — a private comment only agents can see, never a reply to the requester. This WRITES to Zendesk: only call it when you were asked to post a note, and in a conversation only once the user has seen the exact text and said yes. It never changes the status, the assignee or any other field of the ticket. Zendesk signs the note with the agent the connection belongs to.',
+        'Post an internal note on a Zendesk ticket — a private comment only agents can see, never a reply to the requester. This WRITES to Zendesk: only call it when you were asked to post a note, and when someone is following the conversation, only once they have seen the exact text and said yes; in an unattended run the request is the go-ahead. It never changes the status, the assignee or any other field of the ticket. Zendesk signs the note with the agent the connection belongs to.',
       parameters: z.object({
         ticket: ZENDESK_TICKET_PARAM,
         body: z
