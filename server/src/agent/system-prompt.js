@@ -1,5 +1,6 @@
 import { MAX_ATTACHMENT_CHARS, PROMPT_SECTION_SEPARATOR, SUBAGENT_TOOL_PREFIX } from '../constants.js'
 import { carriesImage } from '../documents/attachments.js'
+import { TIME_TOOL_NAMES } from './time-tools.js'
 import { isYoloMode, buildSourcePolicy, hasWriteTools } from './sources.js'
 import {
   INTEGRATIONS,
@@ -450,6 +451,20 @@ export function buildTurnLimitPrompt(maxTurns) {
   return `You have used all ${maxTurns} turns, you cannot call tools. Write your final report now: what you did on each item, which you did not get to, and anything that failed.`
 }
 
+const DATE_TIME_SECTION = `## Dates and times
+
+- Your sense of today's date comes from your training data and is wrong. Today's date is in "Current context" below; for anything finer — the time of day, how long ago something happened — call get_current_time.
+- Resolve every relative period in a request — "the last hour", "today", "since yesterday", "last week" — with resolve_time_range before you search or query anything, and pass its from/to to the tool. Never do date arithmetic in your head.
+- A question written ahead of time, like a scheduled one, means its periods relative to the moment it runs: "the last hour" is the hour before now.
+- Timestamps from tools are usually UTC. Convert the ones you show with convert_time, present them in the user's time zone and say which zone you used.`
+
+export function buildCurrentDatePrompt({ weekday, local, timezone, utcOffset }, { isUserTimezone = false } = {}) {
+  const today = `Today is ${weekday} ${local.slice(0, 10)} in ${timezone} (UTC${utcOffset}).`
+  if (isUserTimezone) return today
+
+  return `${today} The user's own time zone is not known, so this is ${timezone}: say so whenever you give a time, and switch to theirs once they mention it.`
+}
+
 export function buildBasePrompt(
   policy = null,
   {
@@ -471,6 +486,7 @@ export function buildBasePrompt(
   if (canRenderArtifacts) parts.push(ARTIFACTS_SECTION)
   if (hasActiveSkills) parts.push(SKILL_OVERRIDE_NOTICE)
   if (unattended) parts.push(UNATTENDED_RUN_SECTION)
+  if (TIME_TOOL_NAMES.every(name => toolNames.has(name))) parts.push(DATE_TIME_SECTION)
 
   for (const id of available) {
     const section = INTEGRATION_PROMPT_SECTIONS[id]
@@ -681,7 +697,7 @@ The user has not picked specific sources — you decide which repos and integrat
 ${lines.join('\n')}`
 }
 
-const NO_SOURCES_NOTE = `No source is available in this conversation: no repository is selected and none of the selected integrations is configured in this app. You have no tools at all — do not answer from memory and do not claim to have checked anything. Tell the user that the sources they selected are not available and that an administrator has to configure them.`
+const NO_SOURCES_NOTE = `No source is available in this conversation: no repository is selected and none of the selected integrations is configured in this app. You have no source tools, only the date and time ones — do not answer from memory and do not claim to have checked anything. Tell the user that the sources they selected are not available and that an administrator has to configure them.`
 
 function joinLabels(labels) {
   if (labels.length < 2) return labels.join('')

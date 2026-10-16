@@ -1,4 +1,7 @@
 const TOOL_LABELS = {
+  get_current_time: 'Checking the time',
+  resolve_time_range: 'Resolving time range',
+  convert_time: 'Converting time',
   list_repos: 'Listing repositories',
   get_directory_contents: 'Browsing directory',
   get_file_contents: 'Reading file',

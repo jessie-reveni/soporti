@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import {
+  BROWSER_TIMEZONE,
   SCHEDULE_DAILY,
   SCHEDULE_FREQUENCY_OPTIONS,
   SCHEDULE_HOURLY,
@@ -13,7 +14,6 @@ import { createSchedule, isUnauthorized, updateSchedule } from '../../../../serv
 import { describeSources } from '../describe-schedule.js'
 import './ScheduleForm.css'
 
-const BROWSER_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour)
 const MINUTES = Array.from({ length: 60 }, (_, minute) => minute)
 const MONTH_DAYS = Array.from({ length: SCHEDULE_MONTH_DAY_MAX }, (_, index) => index + 1)

@@ -36,5 +36,6 @@ describe('AutomationsSection', () => {
     expect(screen.getByText(/any other @-mention gets a reply/i)).toBeInTheDocument()
     expect(screen.getByText(/hourly, daily, weekly or monthly/i)).toBeInTheDocument()
     expect(screen.getByText(/edit the question, cadence or sources anytime/i)).toBeInTheDocument()
+    expect(screen.getByText(/errors in the last hour” are measured from when each run starts/i)).toBeInTheDocument()
   })
 })

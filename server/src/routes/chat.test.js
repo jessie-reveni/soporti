@@ -243,6 +243,7 @@ describe('POST /api/chat', () => {
       onNestedToolCall: expect.any(Function),
       onNestedToolResult: expect.any(Function),
       onNestedUsage: expect.any(Function),
+      timezone: null,
     })
   })
 
@@ -357,6 +358,7 @@ describe('POST /api/chat', () => {
       onNestedToolCall: expect.any(Function),
       onNestedToolResult: expect.any(Function),
       onNestedUsage: expect.any(Function),
+      timezone: null,
     })
   })
 
@@ -379,7 +381,24 @@ describe('POST /api/chat', () => {
       onNestedToolCall: expect.any(Function),
       onNestedToolResult: expect.any(Function),
       onNestedUsage: expect.any(Function),
+      timezone: null,
     })
+  })
+
+  it('forwards a valid browser time zone to the agent', async () => {
+    run.mockResolvedValue(createStreamMock([]))
+
+    await request(app).post('/').send({ message: 'errors in the last hour', timezone: 'Europe/Madrid' })
+
+    expect(createAgent).toHaveBeenCalledWith([], undefined, expect.objectContaining({ timezone: 'Europe/Madrid' }))
+  })
+
+  it('returns 400 for an unknown time zone without creating the agent', async () => {
+    const res = await request(app).post('/').send({ message: 'hello', timezone: 'Mars/Olympus' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toBe('Timezone must be a valid IANA time zone name.')
+    expect(createAgent).not.toHaveBeenCalled()
   })
 
   it('returns 400 when there are more attachments than allowed', async () => {
@@ -622,6 +641,7 @@ describe('POST /api/chat', () => {
       onNestedToolCall: expect.any(Function),
       onNestedToolResult: expect.any(Function),
       onNestedUsage: expect.any(Function),
+      timezone: null,
     })
     expect(conversationStore.saveTurn).toHaveBeenCalledWith(
       TEST_CONVERSATION_ID,
@@ -706,6 +726,7 @@ describe('POST /api/chat', () => {
       onNestedToolCall: expect.any(Function),
       onNestedToolResult: expect.any(Function),
       onNestedUsage: expect.any(Function),
+      timezone: null,
     })
   })
 

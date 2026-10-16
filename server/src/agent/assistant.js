@@ -3,6 +3,7 @@ import { resolveModelForAgent } from '../llm/model.js'
 import { buildAgentTools, excludeToolsByName, REPO_TOOL_NAMES, restrictToolsByName } from './tools.js'
 import {
   buildBasePrompt,
+  buildCurrentDatePrompt,
   buildSourceInstructions,
   buildProfileInstructions,
   buildSkillsPrompt,
@@ -10,6 +11,8 @@ import {
 } from './system-prompt.js'
 import { buildSubagentTools, claimedToolNames, parentConfiguredFlags, resolveActiveSubagents } from './subagents.js'
 import { getMainAgentTools } from './settings.js'
+import { canonicalizeTimezone, describeInstant } from './clock.js'
+import { DEFAULT_TIMEZONE } from '../constants.js'
 import { isYoloMode, buildSourcePolicy } from './sources.js'
 import { buildRepoCatalogPrompt } from './repo-catalog.js'
 import { areShortcutWritesEnabled, isShortcutConfigured } from '../shortcut/settings.js'
@@ -38,8 +41,11 @@ export async function createAgent(
     onNestedToolResult = null,
     onNestedUsage = null,
     unattended = false,
+    timezone = null,
   } = {}
 ) {
+  const userTimezone = canonicalizeTimezone(timezone)
+  const zone = userTimezone ?? DEFAULT_TIMEZONE
   const policy = buildSourcePolicy(selectedSources)
 
   const [
@@ -95,6 +101,7 @@ export async function createAgent(
     userId,
     conversationId,
     onArtifactPublished,
+    timezone: zone,
     shortcutWrites,
     figmaComments: figmaConfigured && figmaCommentsEnabled,
     zendeskWrites: Boolean(zendeskConnection?.writesEnabled),
@@ -129,7 +136,10 @@ export async function createAgent(
       unattended,
     }),
   ]
-  parts.push(profileInstructions, `## Current context\n\n${sourceInstructions}`)
+  const datePrompt = buildCurrentDatePrompt(describeInstant(new Date(), zone), {
+    isUserTimezone: Boolean(userTimezone),
+  })
+  parts.push(profileInstructions, `## Current context\n\n${datePrompt}\n\n${sourceInstructions}`)
   if (catalogPrompt && hasRepoTools) parts.push(catalogPrompt)
   if (userInstructions) {
     parts.push(

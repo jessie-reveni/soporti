@@ -5,12 +5,17 @@ import { extractUsage } from '../llm/usage.js'
 import { REPO_TOOL_NAMES, selectToolsByName } from './tools.js'
 import { toolCallFromRawItem } from './run-items.js'
 import { INTEGRATION_TOOL_NAMES } from './sources.js'
+import { TIME_TOOL_NAMES } from './time-tools.js'
 import { INTEGRATIONS } from './integrations.js'
 import { MAX_ACTIVE_SUBAGENTS, SUBAGENT_MAX_TURNS, SUBAGENT_TOOL_PREFIX } from '../constants.js'
 
 const ROLE_SECTION = `## How you are being used
 
 You are a specialist invoked by another agent, not by a person. Answer only what was asked, in plain text, with the specifics the caller needs — findings, values, file paths, ids — and no preamble or closing question. You cannot ask a follow-up: if the request is ambiguous, state the assumption you made and answer under it. Everything you return goes back to the calling agent, never directly to a user, and the caller rewrites it before anyone reads it — so answer in the language the request came in and never assume it is the language the user speaks.`
+
+const TIME_SECTION = `## Dates and times
+
+Your sense of today's date comes from your training data and is wrong. Resolve every relative period in a request — "the last hour", "today", "yesterday", "last week" — with resolve_time_range before you search or query anything, pass its from/to to the tool, and never do date arithmetic in your head. Call get_current_time when you need the time of day and convert_time to read timestamps from tools. Say which time zone the times you report are in.`
 
 function selectionKey(row) {
   return `${row.provider ?? ''}|${row.model ?? ''}`
@@ -60,6 +65,7 @@ function buildSubagentPrompt(row, tools, repoCatalogPrompt) {
   if (repoCatalogPrompt && tools.some(candidate => REPO_TOOL_NAMES.has(candidate.name))) {
     parts.push(repoCatalogPrompt)
   }
+  if (TIME_TOOL_NAMES.every(name => tools.some(candidate => candidate.name === name))) parts.push(TIME_SECTION)
   parts.push(ROLE_SECTION)
 
   return parts.join('\n\n')
@@ -67,7 +73,7 @@ function buildSubagentPrompt(row, tools, repoCatalogPrompt) {
 
 async function buildSubagentTool(row, parentTools, hooks, resolveModel) {
   const { onNestedToolCall, onNestedToolResult, onNestedUsage, repoCatalogPrompt = '' } = hooks
-  const tools = selectToolsByName(parentTools, row.tools)
+  const tools = selectToolsByName(parentTools, [...row.tools, ...TIME_TOOL_NAMES])
   const { model, modelSettings } = await resolveModel(row)
 
   const agent = new Agent({

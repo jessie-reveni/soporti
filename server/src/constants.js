@@ -1,3 +1,4 @@
+export const DEFAULT_TIMEZONE = 'UTC'
 export const MAX_INSTRUCTIONS_LENGTH = 50_000
 export const MAX_DESCRIPTION_LENGTH = 200
 

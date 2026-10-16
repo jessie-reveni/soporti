@@ -26,6 +26,7 @@ vi.mock('./tools.js', () => ({
   selectToolsByName: (tools, names) => tools.filter(candidate => (names ?? []).includes(candidate.name)),
 }))
 
+const { TIME_TOOL_NAMES } = await import('./time-tools.js')
 const { buildSubagentTools, claimedToolNames, parentConfiguredFlags, resolveActiveSubagents } =
   await import('./subagents.js')
 
@@ -156,6 +157,13 @@ describe('parentConfiguredFlags', () => {
 })
 
 describe('buildSubagentTools', () => {
+  it('gives every specialist the time tools whatever it was granted', async () => {
+    const timeTools = TIME_TOOL_NAMES.map(name => ({ name }))
+    const [tool] = await buildSubagentTools([row({ tools: ['search_code'] })], [...PARENT_TOOLS, ...timeTools])
+
+    expect(tool.agent.tools.map(candidate => candidate.name)).toEqual(['search_code', ...TIME_TOOL_NAMES])
+  })
+
   it('builds one tool per row, named after it and described by its own description', async () => {
     const tools = await buildSubagentTools(
       [row(), row({ id: 2, name: 'context_gatherer', description: 'Owns Notion.' })],
@@ -168,6 +176,16 @@ describe('buildSubagentTools', () => {
 
   it('returns nothing when there are no subagents', async () => {
     expect(await buildSubagentTools([], PARENT_TOOLS)).toEqual([])
+  })
+
+  it('tells a specialist holding the time tools how to use them, and says nothing otherwise', async () => {
+    const timeTools = TIME_TOOL_NAMES.map(name => ({ name }))
+    const [withTime] = await buildSubagentTools([row()], [...PARENT_TOOLS, ...timeTools])
+    const [withoutTime] = await buildSubagentTools([row()], PARENT_TOOLS)
+
+    expect(withTime.agent.instructions).toContain('## Dates and times')
+    expect(withTime.agent.instructions).toContain('resolve_time_range')
+    expect(withoutTime.agent.instructions).not.toContain('## Dates and times')
   })
 
   it('intersects the allowlist with the tools the conversation actually permits', async () => {

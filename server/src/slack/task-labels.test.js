@@ -10,6 +10,17 @@ describe('describeToolCall', () => {
     })
   })
 
+  it('labels the time tools', () => {
+    expect(describeToolCall('get_current_time', '{}')).toEqual({ title: 'Checking the time' })
+    expect(describeToolCall('resolve_time_range', JSON.stringify({ range: 'last', unit: 'hour' }))).toEqual({
+      title: 'Resolving time range',
+    })
+    expect(describeToolCall('convert_time', JSON.stringify({ time: '2026-10-16 09:30' }))).toEqual({
+      title: 'Converting time',
+      details: '2026-10-16 09:30',
+    })
+  })
+
   it('picks the argument configured for each tool', () => {
     expect(describeToolCall('search_notion_pages', JSON.stringify({ query: 'refund policy' }))).toEqual({
       title: 'Searching Notion',

@@ -3,6 +3,7 @@ import { run } from '@openai/agents'
 import { createAgent } from '../agent/assistant.js'
 import { buildUserTurn } from '../agent/user-turn.js'
 import config from '../config.js'
+import { isValidTimezone } from '../schedules/next-run.js'
 import { searchSimilarCases, isKnowledgeBaseConfigured } from '../knowledge/client.js'
 import { storePendingFeedback } from '../knowledge/feedback.js'
 import { buildSourcesFooter, isYoloMode } from '../agent/sources.js'
@@ -56,6 +57,13 @@ function sanitizeInput(rawArgs) {
   } catch {
     return {}
   }
+}
+
+function parseTimezone(value) {
+  if (value === null || value === undefined) return { value: null }
+  if (!isValidTimezone(value)) return { error: 'Timezone must be a valid IANA time zone name.' }
+
+  return { value }
 }
 
 function parseAttachments(value) {
@@ -125,7 +133,7 @@ function appendText(parts, text) {
 
 export default function chatRoute(conversationStore) {
   router.post('/', async (req, res) => {
-    const { sessionId, message, selectedSources, selectedRepos, profile, skillIds, attachments } = req.body
+    const { sessionId, message, selectedSources, selectedRepos, profile, skillIds, attachments, timezone } = req.body
 
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'A "message" string is required.' })
@@ -142,6 +150,9 @@ export default function chatRoute(conversationStore) {
     if (sessionId && !UUID_RE.test(sessionId)) {
       return res.status(400).json({ error: 'Invalid session ID.' })
     }
+
+    const { error: timezoneError, value: cleanTimezone } = parseTimezone(timezone)
+    if (timezoneError) return res.status(400).json({ error: timezoneError })
 
     const { error: attachmentsError, value: cleanAttachments } = parseAttachments(attachments)
     if (attachmentsError) return res.status(400).json({ error: attachmentsError })
@@ -256,6 +267,7 @@ export default function chatRoute(conversationStore) {
         onNestedToolCall: startToolCall,
         onNestedToolResult: finishToolCall,
         onNestedUsage: usage => nestedUsage.push(usage),
+        timezone: cleanTimezone,
       })
       const agentStart = Date.now()
 

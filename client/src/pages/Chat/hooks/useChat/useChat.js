@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
+import { BROWSER_TIMEZONE } from '../../../../constants.js'
 import { getConversation, isUnauthorized, streamChat } from '../../../../services/services.js'
 
 const FIRST_CHAT_KEY = 'chat-1'
@@ -219,6 +220,7 @@ export function useChat(token, onAuthError, onArtifactPublished) {
             profile,
             skillIds: skills.map(skill => skill.id),
             attachments: attachments.map(({ previewUrl: _previewUrl, ...sent }) => sent),
+            timezone: BROWSER_TIMEZONE,
           },
           abortController.signal
         )

@@ -22,6 +22,7 @@ const SCHEDULE = {
   question: 'Failed payments in the last 24h',
   sources: ['yolo'],
   profile: 'support',
+  timezone: 'Europe/Madrid',
 }
 
 const CONVERSATION_ID = '11111111-1111-4111-8111-111111111111'
@@ -72,6 +73,7 @@ describe('runSchedule', () => {
       onNestedToolCall: expect.any(Function),
       onNestedUsage: expect.any(Function),
       unattended: true,
+      timezone: 'Europe/Madrid',
     })
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ name: 'agent' }), 'Failed payments in the last 24h', {
       maxTurns: 42,
@@ -129,6 +131,7 @@ describe('runSchedule', () => {
       onNestedToolCall: expect.any(Function),
       onNestedUsage: expect.any(Function),
       unattended: true,
+      timezone: 'Europe/Madrid',
     })
   })
 

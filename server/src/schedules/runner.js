@@ -45,6 +45,7 @@ export async function runSchedule(schedule, conversationStore) {
       onNestedToolCall: call => nestedToolCalls.push(call),
       onNestedUsage: usage => nestedUsage.push(usage),
       unattended: true,
+      timezone: schedule.timezone,
     })
     const agentInput = buildUserTurn(schedule.question, { similarCases })
 
