@@ -1,4 +1,4 @@
-import { offsetMs, shiftParts, toInstant, weekdayOf, zonedParts } from '../schedules/next-run.js'
+import { isValidTimezone, offsetMs, shiftParts, toInstant, weekdayOf, zonedParts } from '../schedules/next-run.js'
 
 const MINUTE_MS = 60_000
 const HOUR_MS = 3_600_000
@@ -52,6 +52,12 @@ function startOfUnit(local, unit) {
   if (unit === 'month') return { ...midnight, day: 1 }
 
   return { ...midnight, month: 1, day: 1 }
+}
+
+export function canonicalizeTimezone(timezone) {
+  if (!isValidTimezone(timezone)) return null
+
+  return new Intl.DateTimeFormat('en-US', { timeZone: timezone }).resolvedOptions().timeZone
 }
 
 export function describeInstant(instant, timezone) {

@@ -11,7 +11,7 @@ import {
 } from './system-prompt.js'
 import { buildSubagentTools, claimedToolNames, parentConfiguredFlags, resolveActiveSubagents } from './subagents.js'
 import { getMainAgentTools } from './settings.js'
-import { describeInstant } from './clock.js'
+import { canonicalizeTimezone, describeInstant } from './clock.js'
 import { DEFAULT_TIMEZONE } from '../constants.js'
 import { isYoloMode, buildSourcePolicy } from './sources.js'
 import { buildRepoCatalogPrompt } from './repo-catalog.js'
@@ -44,7 +44,8 @@ export async function createAgent(
     timezone = null,
   } = {}
 ) {
-  const zone = timezone ?? DEFAULT_TIMEZONE
+  const userTimezone = canonicalizeTimezone(timezone)
+  const zone = userTimezone ?? DEFAULT_TIMEZONE
   const policy = buildSourcePolicy(selectedSources)
 
   const [
@@ -135,7 +136,9 @@ export async function createAgent(
       unattended,
     }),
   ]
-  const datePrompt = buildCurrentDatePrompt(describeInstant(new Date(), zone), { isUserTimezone: Boolean(timezone) })
+  const datePrompt = buildCurrentDatePrompt(describeInstant(new Date(), zone), {
+    isUserTimezone: Boolean(userTimezone),
+  })
   parts.push(profileInstructions, `## Current context\n\n${datePrompt}\n\n${sourceInstructions}`)
   if (catalogPrompt && hasRepoTools) parts.push(catalogPrompt)
   if (userInstructions) {
