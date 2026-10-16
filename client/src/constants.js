@@ -1,5 +1,7 @@
 export const YOLO_SOURCE = 'yolo'
 
+export const BROWSER_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
+
 export const QUESTION_PARAM = 'q'
 
 const SKILL_NAME_CHARS = '[a-z0-9-]'

@@ -21,6 +21,7 @@ const AUTOMATIONS = [
       'Runs with the sources and profile you picked',
       'Every run lands as its own conversation you can continue',
       'Edit the question, cadence or sources anytime without losing its history',
+      'Relative periods like “errors in the last hour” are measured from when each run starts, in its time zone',
       'The answer is waiting before you think to ask',
     ],
   },

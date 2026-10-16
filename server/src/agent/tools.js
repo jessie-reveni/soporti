@@ -31,6 +31,7 @@ import {
 import { resolveAvailableIntegrations } from './integrations.js'
 import { INTEGRATION_TOOL_NAMES } from './sources.js'
 import { buildArtifactTools } from './artifact-tools.js'
+import { buildTimeTools } from './time-tools.js'
 
 export const listReposTool = tool({
   name: 'list_repos',
@@ -1080,10 +1081,11 @@ export function buildAgentTools(policy, configured, context = {}) {
   })
 
   const artifactTools = buildArtifactTools(context.conversationId, context.onArtifactPublished)
+  const timeTools = buildTimeTools(context.timezone)
 
-  if (!policy || policy.unrestricted) return [...allTools, ...integrationTools, ...artifactTools]
+  if (!policy || policy.unrestricted) return [...allTools, ...integrationTools, ...artifactTools, ...timeTools]
 
   const repoTools = policy.repos.length > 0 ? buildRepoTools(policy.repos) : []
 
-  return [...repoTools, ...integrationTools, ...artifactTools]
+  return [...repoTools, ...integrationTools, ...artifactTools, ...timeTools]
 }

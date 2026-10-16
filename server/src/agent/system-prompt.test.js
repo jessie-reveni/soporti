@@ -8,9 +8,11 @@ import {
   buildSourceInstructions,
   buildSimilarCasesPrompt,
   buildSubagentsPrompt,
+  buildCurrentDatePrompt,
 } from './system-prompt.js'
 import { buildSourcePolicy } from './sources.js'
 import { INTEGRATIONS } from './integrations.js'
+import { TIME_TOOL_NAMES } from './time-tools.js'
 
 const ALL_CONFIGURED = {
   shortcutConfigured: true,
@@ -679,7 +681,7 @@ describe('the parent-effective prompt when tools are delegated', () => {
 
     expect(instructions).not.toContain('- org/api')
     expect(instructions).toContain('they belong to a specialist agent')
-    expect(instructions).not.toContain('You have no tools at all')
+    expect(instructions).not.toContain('You have no source tools')
   })
 
   it('stops telling an unscoped conversation to call list_repos when the tool is gone', () => {
@@ -724,5 +726,43 @@ describe('buildSubagentsPrompt language', () => {
     const prompt = buildSubagentsPrompt([{ name: 'code_investigator', description: 'Owns the codebase.' }])
 
     expect(prompt).toContain("Do not paste a specialist's reply verbatim")
+  })
+})
+
+describe('date and time prompt', () => {
+  const MADRID_MOMENT = {
+    weekday: 'Friday',
+    local: '2026-10-16T14:05:09+02:00',
+    timezone: 'Europe/Madrid',
+    utcOffset: '+02:00',
+  }
+
+  it('adds the dates and times section only when every time tool is registered', () => {
+    const withTools = buildBasePrompt(null, { toolNames: new Set(TIME_TOOL_NAMES) })
+    const withoutTools = buildBasePrompt(null, { toolNames: new Set(['get_current_time']) })
+
+    expect(withTools).toContain('## Dates and times')
+    expect(withTools).toContain('resolve_time_range')
+    expect(withoutTools).not.toContain('## Dates and times')
+  })
+
+  it('states the date in the user time zone without the time of day', () => {
+    const prompt = buildCurrentDatePrompt(MADRID_MOMENT, { isUserTimezone: true })
+
+    expect(prompt).toBe('Today is Friday 2026-10-16 in Europe/Madrid (UTC+02:00).')
+    expect(prompt).not.toContain('14:05')
+  })
+
+  it('warns that the zone is a fallback when the user time zone is unknown', () => {
+    const prompt = buildCurrentDatePrompt(MADRID_MOMENT, { isUserTimezone: false })
+
+    expect(prompt).toContain('Today is Friday 2026-10-16 in Europe/Madrid (UTC+02:00).')
+    expect(prompt).toContain("The user's own time zone is not known")
+  })
+
+  it('mentions the date and time tools in the note for a conversation without sources', () => {
+    const result = buildSourceInstructions(['integration:notion'], {})
+
+    expect(result).toContain('You have no source tools, only the date and time ones')
   })
 })

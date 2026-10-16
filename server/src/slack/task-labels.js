@@ -1,6 +1,9 @@
 const MAX_DETAILS_LENGTH = 80
 
 const TOOL_LABELS = {
+  get_current_time: { label: 'Checking the time' },
+  resolve_time_range: { label: 'Resolving time range' },
+  convert_time: { label: 'Converting time', arg: 'time' },
   list_repos: { label: 'Listing repositories' },
   get_directory_contents: { label: 'Browsing directory', arg: 'path' },
   get_file_contents: { label: 'Reading file', arg: 'path' },

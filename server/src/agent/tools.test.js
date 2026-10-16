@@ -178,6 +178,7 @@ const {
   buildShortcutWriteTools,
 } = await import('./tools.js')
 const { INTEGRATIONS } = await import('./integrations.js')
+const { TIME_TOOL_NAMES } = await import('./time-tools.js')
 
 describe('tool definitions', () => {
   it('exports all core tools', () => {
@@ -354,7 +355,7 @@ describe('buildAgentTools', () => {
 
   it('returns every tool for an unrestricted policy', () => {
     const tools = buildAgentTools({ unrestricted: true, repos: [], integrations: [] })
-    expect(names(tools)).toEqual(names(allTools))
+    expect(names(tools)).toEqual([...names(allTools), ...TIME_TOOL_NAMES])
   })
 
   it('registers render_artifact alongside the restricted repo tools, since a panel is available either way', () => {
@@ -380,8 +381,31 @@ describe('buildAgentTools', () => {
     )
   })
 
+  it('registers the time tools for every policy, even with no source selected', () => {
+    const unrestricted = buildAgentTools({ unrestricted: true, repos: [], integrations: [] })
+    const withRepos = buildAgentTools({ unrestricted: false, repos: ['org/app'], integrations: [] })
+    const withNothing = buildAgentTools({ unrestricted: false, repos: [], integrations: [] })
+
+    expect(names(unrestricted)).toEqual(expect.arrayContaining(TIME_TOOL_NAMES))
+    expect(names(withRepos)).toEqual(expect.arrayContaining(TIME_TOOL_NAMES))
+    expect(names(withNothing)).toEqual(TIME_TOOL_NAMES)
+  })
+
+  it('binds the time tools to the timezone of the context', async () => {
+    const tools = buildAgentTools(null, {}, { timezone: 'Asia/Kolkata' })
+    const getTime = tools.find(t => t.name === 'get_current_time')
+
+    expect(JSON.parse(await getTime.execute({ timezone: null })).timezone).toBe('Asia/Kolkata')
+  })
+
+  it('keeps the time tools when the main agent is restricted to a list of tools', () => {
+    const tools = restrictToolsByName(buildAgentTools(), ['search_code'])
+
+    expect(names(tools)).toEqual(expect.arrayContaining(TIME_TOOL_NAMES))
+  })
+
   it('defaults to unrestricted when no policy is given', () => {
-    expect(names(buildAgentTools())).toEqual(names(allTools))
+    expect(names(buildAgentTools())).toEqual([...names(allTools), ...TIME_TOOL_NAMES])
   })
 
   it('restricted with repos only: guarded repo tools plus always-on Shortcut/Sentry, no list_repos', () => {
@@ -404,6 +428,7 @@ describe('buildAgentTools', () => {
       'list_shortcut_members',
       'get_sentry_issue',
       'search_sentry_issues',
+      ...TIME_TOOL_NAMES,
     ])
   })
 
@@ -430,6 +455,7 @@ describe('buildAgentTools', () => {
       'list_shortcut_members',
       'get_sentry_issue',
       'search_sentry_issues',
+      ...TIME_TOOL_NAMES,
     ])
   })
 
@@ -499,6 +525,7 @@ describe('buildAgentTools', () => {
       'get_figma_node',
       'get_figma_screenshot',
       'list_figma_comments',
+      ...TIME_TOOL_NAMES,
     ])
     expect(names(buildAgentTools(selection, { figmaConfigured: true }, { figmaComments: true }))).toEqual([
       'get_figma_file',
@@ -506,6 +533,7 @@ describe('buildAgentTools', () => {
       'get_figma_screenshot',
       'list_figma_comments',
       'post_figma_comment',
+      ...TIME_TOOL_NAMES,
     ])
   })
 
@@ -547,6 +575,7 @@ describe('buildAgentTools', () => {
       'describe_log_source',
       'search_logs',
       'query_logs',
+      ...TIME_TOOL_NAMES,
     ])
 
     const yolo = { unrestricted: true, repos: [], integrations: [] }
@@ -576,6 +605,7 @@ describe('buildAgentTools', () => {
       'list_shortcut_members',
       'get_sentry_issue',
       'search_sentry_issues',
+      ...TIME_TOOL_NAMES,
     ])
   })
 

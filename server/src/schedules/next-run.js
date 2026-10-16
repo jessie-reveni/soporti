@@ -10,7 +10,7 @@ const FREQUENCY_STEPS = {
   [SCHEDULE_MONTHLY]: { months: 1 },
 }
 
-function zonedParts(date, timezone) {
+export function zonedParts(date, timezone) {
   const formatted = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     hourCycle: 'h23',
@@ -28,7 +28,7 @@ function zonedParts(date, timezone) {
   return parts
 }
 
-function shiftParts(parts, { hours = 0, days = 0, months = 0 } = {}) {
+export function shiftParts(parts, { hours = 0, days = 0, months = 0 } = {}) {
   const shifted = new Date(
     Date.UTC(parts.year, parts.month - 1 + months, parts.day + days, parts.hour + hours, parts.minute)
   )
@@ -41,19 +41,19 @@ function shiftParts(parts, { hours = 0, days = 0, months = 0 } = {}) {
   }
 }
 
-function offsetMs(date, timezone) {
+export function offsetMs(date, timezone) {
   const parts = zonedParts(date, timezone)
   const asIfUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute)
   return asIfUtc - Math.floor(date.getTime() / MINUTE_MS) * MINUTE_MS
 }
 
-function toInstant(parts, timezone) {
+export function toInstant(parts, timezone) {
   const naive = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute)
   const guess = new Date(naive - offsetMs(new Date(naive), timezone))
   return new Date(naive - offsetMs(guess, timezone))
 }
 
-function weekdayOf({ year, month, day }) {
+export function weekdayOf({ year, month, day }) {
   return new Date(Date.UTC(year, month - 1, day)).getUTCDay()
 }
 

@@ -6,6 +6,12 @@ describe('describeToolCall', () => {
     expect(describeToolCall({ tool: 'search_sentry_issues', input: {} }).label).toBe('Searching Sentry')
   })
 
+  it('labels the time tools', () => {
+    expect(describeToolCall({ tool: 'get_current_time', input: {} }).label).toBe('Checking the time')
+    expect(describeToolCall({ tool: 'resolve_time_range', input: {} }).label).toBe('Resolving time range')
+    expect(describeToolCall({ tool: 'convert_time', input: {} }).label).toBe('Converting time')
+  })
+
   it('labels the Figma tools', () => {
     expect(describeToolCall({ tool: 'get_figma_screenshot', input: {} }).label).toBe('Rendering Figma design')
     expect(describeToolCall({ tool: 'post_figma_comment', input: {} }).label).toBe('Commenting on Figma design')

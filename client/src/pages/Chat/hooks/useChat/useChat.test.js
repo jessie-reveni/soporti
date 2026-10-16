@@ -125,6 +125,7 @@ describe('useChat', () => {
     const [, options] = global.fetch.mock.calls[0]
     expect(JSON.parse(options.body).skillIds).toEqual([5])
     expect(JSON.parse(options.body).message).toBe('hi')
+    expect(JSON.parse(options.body).timezone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone)
   })
 
   it('defaults skillIds to an empty array when omitted', async () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('@openai/agents', () => ({
   Agent: class Agent {
@@ -126,6 +126,43 @@ describe('createAgent', () => {
       modelId: 'gpt-4o',
       model: 'gpt-4o',
       modelSettings: {},
+    })
+  })
+
+  describe('date and time', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-10-16T12:05:09Z'))
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('tells the model the date in the given time zone and binds the tools to it', async () => {
+      const agent = await createAgent([], 'support', { timezone: 'Europe/Madrid' })
+
+      expect(agent.instructions).toContain('Today is Friday 2026-10-16 in Europe/Madrid (UTC+02:00).')
+      expect(agent.instructions).not.toContain("The user's own time zone is not known")
+      expect(buildAgentTools).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ timezone: 'Europe/Madrid' })
+      )
+    })
+
+    it('falls back to UTC and says the user time zone is unknown', async () => {
+      const agent = await createAgent([], 'support')
+
+      expect(agent.instructions).toContain('Today is Friday 2026-10-16 in UTC (UTC+00:00).')
+      expect(agent.instructions).toContain("The user's own time zone is not known")
+    })
+
+    it('keeps the time of day out of the instructions so the prefix stays cacheable', async () => {
+      const agent = await createAgent([], 'support', { timezone: 'Europe/Madrid' })
+
+      expect(agent.instructions).not.toContain('14:05')
+      expect(agent.instructions).not.toContain('12:05')
     })
   })
 
@@ -463,6 +500,7 @@ describe('createAgent', () => {
         userId: null,
         conversationId: null,
         onArtifactPublished: null,
+        timezone: 'UTC',
         shortcutWrites: false,
         figmaComments: false,
         zendeskWrites: false,
@@ -483,6 +521,7 @@ describe('createAgent', () => {
         userId: 7,
         conversationId: null,
         onArtifactPublished: null,
+        timezone: 'UTC',
         shortcutWrites: false,
         figmaComments: false,
         zendeskWrites: false,
@@ -503,6 +542,7 @@ describe('createAgent', () => {
         userId: null,
         conversationId: null,
         onArtifactPublished: null,
+        timezone: 'UTC',
         shortcutWrites: false,
         figmaComments: false,
         zendeskWrites: false,
