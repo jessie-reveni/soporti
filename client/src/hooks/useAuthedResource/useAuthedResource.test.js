@@ -6,7 +6,9 @@ describe('useAuthedResource', () => {
   it('loads the keyed value with the token', async () => {
     const fetchResource = vi.fn().mockResolvedValue({ integrations: [{ id: 'notion' }] })
 
-    const { result } = renderHook(() => useAuthedResource(fetchResource, 'integrations', 'tok', []))
+    const { result } = renderHook(() =>
+      useAuthedResource(fetchResource, { key: 'integrations', token: 'tok', initialValue: [] })
+    )
 
     await waitFor(() => expect(result.current).toEqual([{ id: 'notion' }]))
     expect(fetchResource).toHaveBeenCalledWith('tok')
@@ -15,7 +17,9 @@ describe('useAuthedResource', () => {
   it('keeps the initial value without a token and never fetches', async () => {
     const fetchResource = vi.fn()
 
-    const { result } = renderHook(() => useAuthedResource(fetchResource, 'integrations', null, []))
+    const { result } = renderHook(() =>
+      useAuthedResource(fetchResource, { key: 'integrations', token: null, initialValue: [] })
+    )
 
     expect(result.current).toEqual([])
     expect(fetchResource).not.toHaveBeenCalled()
@@ -24,7 +28,9 @@ describe('useAuthedResource', () => {
   it('keeps the initial value when the request fails', async () => {
     const fetchResource = vi.fn().mockRejectedValue(new Error('boom'))
 
-    const { result } = renderHook(() => useAuthedResource(fetchResource, 'integrations', 'tok', []))
+    const { result } = renderHook(() =>
+      useAuthedResource(fetchResource, { key: 'integrations', token: 'tok', initialValue: [] })
+    )
 
     await waitFor(() => expect(fetchResource).toHaveBeenCalled())
     expect(result.current).toEqual([])
@@ -37,7 +43,8 @@ describe('useAuthedResource', () => {
       .mockResolvedValueOnce({ integrations: [{ id: 'notion' }, { id: 'granola' }] })
 
     const { result, rerender } = renderHook(
-      ({ reloadKey }) => useAuthedResource(fetchResource, 'integrations', 'tok', [], reloadKey),
+      ({ reloadKey }) =>
+        useAuthedResource(fetchResource, { key: 'integrations', token: 'tok', initialValue: [], reloadKey }),
       { initialProps: { reloadKey: 0 } }
     )
 
@@ -53,7 +60,8 @@ describe('useAuthedResource', () => {
     const fetchResource = vi.fn().mockResolvedValue({ integrations: [{ id: 'notion' }] })
 
     const { rerender } = renderHook(
-      ({ reloadKey }) => useAuthedResource(fetchResource, 'integrations', 'tok', [], reloadKey),
+      ({ reloadKey }) =>
+        useAuthedResource(fetchResource, { key: 'integrations', token: 'tok', initialValue: [], reloadKey }),
       { initialProps: { reloadKey: 0 } }
     )
 

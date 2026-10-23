@@ -63,13 +63,43 @@ async function resolveAccessToken(userId) {
   return { user: { id: owner.id, email: owner.email, name: owner.name, role: owner.role ?? 'user' } }
 }
 
+function isPublicRequest(req) {
+  if (req.method === 'GET' && req.path.startsWith('/api/share/')) return true
+
+  return PUBLIC_ROUTES.some(route => route.method === req.method && route.path === req.path)
+}
+
+async function authenticateApiKey(token, req, res, next) {
+  try {
+    const resolved = await resolveApiKey(token)
+    if (!resolved) return unauthorized(req, res, 'Invalid or revoked API key.')
+
+    req.user = resolved.user
+    req.apiKey = resolved.apiKey
+    return next()
+  } catch (err) {
+    return next(err)
+  }
+}
+
+async function authenticateAccessToken(accessToken, req, res, next) {
+  if (req.path !== MCP_ENDPOINT_PATH) {
+    return unauthorized(req, res, 'This access token is only valid for the MCP endpoint.')
+  }
+
+  try {
+    const resolved = await resolveAccessToken(accessToken.userId)
+    if (!resolved) return unauthorized(req, res, 'The account behind this access token no longer exists.')
+
+    req.user = resolved.user
+    return next()
+  } catch (err) {
+    return next(err)
+  }
+}
+
 export async function requireAuth(req, res, next) {
-  if (PUBLIC_ROUTES.some(route => route.method === req.method && route.path === req.path)) {
-    return next()
-  }
-  if (req.method === 'GET' && req.path.startsWith('/api/share/')) {
-    return next()
-  }
+  if (isPublicRequest(req)) return next()
 
   const authHeader = req.headers.authorization
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -77,43 +107,13 @@ export async function requireAuth(req, res, next) {
   }
 
   const token = authHeader.slice(7)
-
-  if (isApiKeyToken(token)) {
-    try {
-      const resolved = await resolveApiKey(token)
-      if (!resolved) return unauthorized(req, res, 'Invalid or revoked API key.')
-
-      req.user = resolved.user
-      req.apiKey = resolved.apiKey
-      return next()
-    } catch (err) {
-      return next(err)
-    }
-  }
+  if (isApiKeyToken(token)) return authenticateApiKey(token, req, res, next)
 
   const accessToken = verifyAccessToken(token)
-
-  if (accessToken) {
-    if (req.path !== MCP_ENDPOINT_PATH) {
-      return unauthorized(req, res, 'This access token is only valid for the MCP endpoint.')
-    }
-
-    try {
-      const resolved = await resolveAccessToken(accessToken.userId)
-      if (!resolved) return unauthorized(req, res, 'The account behind this access token no longer exists.')
-
-      req.user = resolved.user
-      return next()
-    } catch (err) {
-      return next(err)
-    }
-  }
+  if (accessToken) return authenticateAccessToken(accessToken, req, res, next)
 
   const user = getSessionUser(token)
-
-  if (!user) {
-    return unauthorized(req, res, 'Invalid or expired token.')
-  }
+  if (!user) return unauthorized(req, res, 'Invalid or expired token.')
 
   req.user = user
   next()

@@ -190,7 +190,7 @@ export function useChat(token, onAuthError, onArtifactPublished) {
   )
 
   const sendMessage = useCallback(
-    async (text, selectedSources, profile, skills = [], attachments = []) => {
+    async (text, { selectedSources, profile, skills = [], attachments = [] }) => {
       const key = activeKeyRef.current
       const chat = chats[key]
       if (!text.trim() || chat.isLoading) return

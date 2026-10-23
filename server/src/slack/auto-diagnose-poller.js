@@ -20,6 +20,10 @@ function log(icon, ...args) {
   console.log(`[${timestamp}] [auto-diagnose] ${icon}`, ...args)
 }
 
+const ITEM_PENDING = 'pending'
+const ITEM_SKIPPED = 'skipped'
+const ITEM_UNREADABLE_DATE = 'unreadable-date'
+
 let intervalHandle = null
 const inFlight = new Set()
 
@@ -43,6 +47,53 @@ async function diagnoseAndWrite(client, { item, rowId, columns, diagnosisColumnI
   log('✅', `Wrote diagnosis to row ${rowId}`)
 }
 
+async function processRow(client, { item, rowId, columns, diagnosisColumnId }) {
+  inFlight.add(rowId)
+  try {
+    await diagnoseAndWrite(client, { item, rowId, columns, diagnosisColumnId })
+  } catch (err) {
+    log('⚠️', `Failed to diagnose row ${rowId}: ${err.message}`)
+  } finally {
+    inFlight.delete(rowId)
+  }
+}
+
+function parseSkipBefore(skipBefore) {
+  if (!skipBefore) return { value: null }
+
+  const value = parseListTimestamp(skipBefore)
+  if (value == null) {
+    return {
+      error:
+        `SLACK_AUTODIAGNOSE_SKIP_BEFORE="${skipBefore}" is not a valid date; ` +
+        'skipping this poll to avoid diagnosing the backlog. Fix the value (ISO date or epoch).',
+    }
+  }
+
+  return { value }
+}
+
+function triageCreatedDate(item, skipBeforeMs) {
+  if (skipBeforeMs == null) return ITEM_PENDING
+
+  const createdMs = getCreatedMs(item)
+  if (createdMs == null) return ITEM_UNREADABLE_DATE
+
+  return createdMs < skipBeforeMs ? ITEM_SKIPPED : ITEM_PENDING
+}
+
+function triageItem(item, { rowId, diagnosisColumnId, skipArchived, skipBeforeMs }) {
+  if (!rowId) return ITEM_SKIPPED
+  if (skipArchived && isArchived(item)) return ITEM_SKIPPED
+
+  const dateStatus = triageCreatedDate(item, skipBeforeMs)
+  if (dateStatus !== ITEM_PENDING) return dateStatus
+  if ((fieldMap(item)[diagnosisColumnId] || '').trim()) return ITEM_SKIPPED
+  if (inFlight.has(rowId)) return ITEM_SKIPPED
+
+  return ITEM_PENDING
+}
+
 export async function runPollOnce(client) {
   const { listId, columnId, columnName, maxItemsPerPoll, skipArchived, skipBefore } = config.autoDiagnose
   const [{ items }, columns] = await Promise.all([fetchList(client, { listId }), fetchSchema(client, { listId })])
@@ -57,46 +108,24 @@ export async function runPollOnce(client) {
     return { processed: 0 }
   }
 
-  let skipBeforeMs = null
-  if (skipBefore) {
-    skipBeforeMs = parseListTimestamp(skipBefore)
-    if (skipBeforeMs == null) {
-      log(
-        '⛔',
-        `SLACK_AUTODIAGNOSE_SKIP_BEFORE="${skipBefore}" is not a valid date; ` +
-          'skipping this poll to avoid diagnosing the backlog. Fix the value (ISO date or epoch).'
-      )
-      return { processed: 0 }
-    }
+  const { error: skipBeforeError, value: skipBeforeMs } = parseSkipBefore(skipBefore)
+  if (skipBeforeError) {
+    log('⛔', skipBeforeError)
+    return { processed: 0 }
   }
 
   let processed = 0
   let unparsedDates = 0
   for (const item of items) {
     if (processed >= maxItemsPerPoll) break
-    const rowId = getRowId(item)
-    if (!rowId) continue
-    if (skipArchived && isArchived(item)) continue
-    if (skipBeforeMs != null) {
-      const createdMs = getCreatedMs(item)
-      if (createdMs == null) {
-        unparsedDates++
-        continue
-      }
-      if (createdMs < skipBeforeMs) continue
-    }
-    if ((fieldMap(item)[diagnosisColumnId] || '').trim()) continue
-    if (inFlight.has(rowId)) continue
 
-    inFlight.add(rowId)
+    const rowId = getRowId(item)
+    const status = triageItem(item, { rowId, diagnosisColumnId, skipArchived, skipBeforeMs })
+    if (status === ITEM_UNREADABLE_DATE) unparsedDates++
+    if (status !== ITEM_PENDING) continue
+
     processed++
-    try {
-      await diagnoseAndWrite(client, { item, rowId, columns, diagnosisColumnId })
-    } catch (err) {
-      log('⚠️', `Failed to diagnose row ${rowId}: ${err.message}`)
-    } finally {
-      inFlight.delete(rowId)
-    }
+    await processRow(client, { item, rowId, columns, diagnosisColumnId })
   }
 
   if (unparsedDates > 0) {

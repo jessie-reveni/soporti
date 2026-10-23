@@ -1,49 +1,62 @@
 const EXPORT_FILENAME = 'soporti-export.csv'
 
+function endField(state) {
+  state.row.push(state.field)
+  state.field = ''
+}
+
+function endRow(state) {
+  endField(state)
+  state.rows.push(state.row)
+  state.row = []
+}
+
+function readQuotedChar(state, text, index) {
+  const char = text[index]
+  if (char !== '"') {
+    state.field += char
+    return index
+  }
+  if (text[index + 1] === '"') {
+    state.field += '"'
+    return index + 1
+  }
+
+  state.inQuotes = false
+  return index
+}
+
+function readChar(state, char) {
+  if (char === '"') {
+    state.inQuotes = true
+    return
+  }
+  if (char === ',') {
+    endField(state)
+    return
+  }
+  if (char === '\n') {
+    endRow(state)
+    return
+  }
+  if (char !== '\r') state.field += char
+}
+
 export function parseCsv(text) {
-  const rows = []
-  let row = []
-  let field = ''
-  let inQuotes = false
+  const state = { rows: [], row: [], field: '', inQuotes: false }
 
   for (let i = 0; i < text.length; i++) {
-    const char = text[i]
-
-    if (inQuotes) {
-      if (char === '"') {
-        if (text[i + 1] === '"') {
-          field += '"'
-          i++
-        } else {
-          inQuotes = false
-        }
-      } else {
-        field += char
-      }
+    if (state.inQuotes) {
+      i = readQuotedChar(state, text, i)
       continue
     }
 
-    if (char === '"') {
-      inQuotes = true
-    } else if (char === ',') {
-      row.push(field)
-      field = ''
-    } else if (char === '\n') {
-      row.push(field)
-      rows.push(row)
-      row = []
-      field = ''
-    } else if (char !== '\r') {
-      field += char
-    }
+    readChar(state, text[i])
   }
 
-  if (field !== '' || row.length > 0) {
-    row.push(field)
-    rows.push(row)
-  }
+  if (state.field !== '' || state.row.length > 0) endRow(state)
 
-  return rows
+  return state.rows
 }
 
 export function downloadCsv(csv) {

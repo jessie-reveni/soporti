@@ -100,7 +100,7 @@ export default function GridPattern({ variant = 'dark' }) {
         drawGridHighlight(ctx, mouse, cfg)
       }
       for (const walker of walkers) {
-        updateWalker(walker, dt, width, height, walkers)
+        updateWalker(walker, dt, { width, height, walkers })
         drawWalker(ctx, walker, cfg)
       }
       rafId = requestAnimationFrame(frame)

@@ -38,7 +38,12 @@ export default function Chat({ initialQuestion = '' }) {
   const authMethods = useAuthMethods()
   const skills = useSkills(token, logout)
   const [integrationsReloadKey, setIntegrationsReloadKey] = useState(0)
-  const integrations = useAuthedResource(getIntegrations, 'integrations', token, [], integrationsReloadKey)
+  const integrations = useAuthedResource(getIntegrations, {
+    key: 'integrations',
+    token,
+    initialValue: [],
+    reloadKey: integrationsReloadKey,
+  })
   const artifacts = useArtifacts(token, logout)
   const artifactShare = useArtifactShare(token, logout)
   const {
@@ -81,7 +86,7 @@ export default function Chat({ initialQuestion = '' }) {
   }
 
   function handleSend(text, skills = [], attachments = []) {
-    sendMessage(text, selectedSources, selectedProfile, skills, attachments)
+    sendMessage(text, { selectedSources, profile: selectedProfile, skills, attachments })
   }
 
   async function handleLoadConversation(id) {

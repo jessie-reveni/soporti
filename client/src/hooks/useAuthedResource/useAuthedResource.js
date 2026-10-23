@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export function useAuthedResource(fetchResource, key, token, initialValue, reloadKey = 0) {
+export function useAuthedResource(fetchResource, { key, token, initialValue, reloadKey = 0 }) {
   const [value, setValue] = useState(initialValue)
 
   useEffect(() => {

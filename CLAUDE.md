@@ -71,6 +71,16 @@ router.get('/:id', async (req, res) => {
 })
 ```
 
+**SMALL FUNCTIONS, ENFORCED BY LINT**: both packages run `max-depth: 3`, `max-params: 4` and `sonarjs/cognitive-complexity: 15` as errors. When a function trips one, split it into named helpers (a `parse*` per item, a lookup table instead of a long `switch`, the loop body in its own function) or group the trailing arguments into an options object. NEVER silence them with `eslint-disable` and never raise the limits.
+
+```js
+// ✅ GOOD
+sendMessage(text, { selectedSources, profile, skills, attachments })
+
+// ❌ BAD
+sendMessage(text, selectedSources, profile, skills, attachments)
+```
+
 **BLANK LINES BETWEEN LOGICAL BLOCKS**: group related statements and separate different groups with a blank line — declarations, guards, main logic, return.
 
 ```js

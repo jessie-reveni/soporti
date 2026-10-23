@@ -59,15 +59,15 @@ export async function parseXlsx(buffer, maxChars = Infinity) {
 
 function collectPptxText(node, acc) {
   if (node == null || typeof node !== 'object') return
+
   for (const [key, value] of Object.entries(node)) {
-    if (key === 'a:t') {
-      const runs = Array.isArray(value) ? value : [value]
-      for (const r of runs) acc.push(typeof r === 'string' ? r : String(r))
-    } else if (Array.isArray(value)) {
-      for (const child of value) collectPptxText(child, acc)
-    } else if (typeof value === 'object') {
+    if (key !== 'a:t') {
       collectPptxText(value, acc)
+      continue
     }
+
+    const runs = Array.isArray(value) ? value : [value]
+    acc.push(...runs.map(String))
   }
 }
 

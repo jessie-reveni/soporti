@@ -66,6 +66,39 @@ function parseTimezone(value) {
   return { value }
 }
 
+function parseMessage(message) {
+  if (!message || typeof message !== 'string') return { error: 'A "message" string is required.' }
+
+  const trimmed = message.trim()
+  if (trimmed.length === 0) return { error: 'Message cannot be empty.' }
+  if (trimmed.length > MAX_CHAT_MESSAGE_LENGTH) {
+    return { error: `Message is too long (max ${MAX_CHAT_MESSAGE_LENGTH} characters).` }
+  }
+
+  return { value: trimmed }
+}
+
+function trimmedString(value) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function parseAttachment(item) {
+  const name = trimmedString(item?.name)
+  const text = trimmedString(item?.text)
+  const imageId = trimmedString(item?.imageId)
+
+  if (!name) return { error: 'Each attachment needs a "name".' }
+  if (!isValidAttachmentName(name)) return { error: `Attachment "${name}" has an invalid file name.` }
+  if (!text && !imageId) return { error: `Attachment "${name}" needs its extracted "text" or an "imageId".` }
+  if (imageId && !UUID_RE.test(imageId)) return { error: `Attachment "${name}" has an invalid image ID.` }
+  if (imageId) return { value: { name, imageId } }
+  if (text.length > MAX_ATTACHMENT_CHARS) {
+    return { error: `Attachment "${name}" is too long (max ${MAX_ATTACHMENT_CHARS} characters).` }
+  }
+
+  return { value: { name, text, truncated: Boolean(item.truncated) } }
+}
+
 function parseAttachments(value) {
   if (value === undefined || value === null) return { value: [] }
   if (!Array.isArray(value)) return { error: 'Attachments must be an array.' }
@@ -75,29 +108,51 @@ function parseAttachments(value) {
 
   const parsed = []
   for (const item of value) {
-    const name = typeof item?.name === 'string' ? item.name.trim() : ''
-    const text = typeof item?.text === 'string' ? item.text.trim() : ''
-    const imageId = typeof item?.imageId === 'string' ? item.imageId.trim() : ''
+    const attachment = parseAttachment(item)
+    if (attachment.error) return attachment
 
-    if (!name) return { error: 'Each attachment needs a "name".' }
-    if (!isValidAttachmentName(name)) return { error: `Attachment "${name}" has an invalid file name.` }
-    if (!text && !imageId) return { error: `Attachment "${name}" needs its extracted "text" or an "imageId".` }
-
-    if (imageId) {
-      if (!UUID_RE.test(imageId)) return { error: `Attachment "${name}" has an invalid image ID.` }
-
-      parsed.push({ name, imageId })
-      continue
-    }
-
-    if (text.length > MAX_ATTACHMENT_CHARS) {
-      return { error: `Attachment "${name}" is too long (max ${MAX_ATTACHMENT_CHARS} characters).` }
-    }
-
-    parsed.push({ name, text, truncated: Boolean(item.truncated) })
+    parsed.push(attachment.value)
   }
 
   return { value: parsed }
+}
+
+function parseSources(selectedSources, selectedRepos) {
+  const rawSources = Array.isArray(selectedSources) ? selectedSources : selectedRepos
+
+  return Array.isArray(rawSources) ? rawSources : []
+}
+
+function parseSkillIds(skillIds) {
+  return (Array.isArray(skillIds) ? skillIds : [])
+    .filter(id => Number.isInteger(id) && id > 0)
+    .slice(0, MAX_SKILLS_PER_REQUEST)
+}
+
+function parseChatRequest(body) {
+  const { sessionId, message, selectedSources, selectedRepos, profile, skillIds, attachments, timezone } = body
+
+  const parsedMessage = parseMessage(message)
+  if (parsedMessage.error) return parsedMessage
+  if (sessionId && !UUID_RE.test(sessionId)) return { error: 'Invalid session ID.' }
+
+  const parsedTimezone = parseTimezone(timezone)
+  if (parsedTimezone.error) return parsedTimezone
+
+  const parsedAttachments = parseAttachments(attachments)
+  if (parsedAttachments.error) return parsedAttachments
+
+  return {
+    value: {
+      sessionId,
+      message: parsedMessage.value,
+      sources: parseSources(selectedSources, selectedRepos),
+      profile,
+      skillIds: parseSkillIds(skillIds),
+      attachments: parsedAttachments.value,
+      timezone: parsedTimezone.value,
+    },
+  }
 }
 
 async function resolveAttachmentImages(attachments, userId) {
@@ -131,45 +186,188 @@ function appendText(parts, text) {
   }
 }
 
+async function loadInvokedSkills(skillIds, userId) {
+  if (skillIds.length === 0) return []
+
+  return getSkillsByIds(skillIds, userId).catch(err => {
+    console.error('Failed to load skills:', err)
+    return []
+  })
+}
+
+function logIncomingMessage(request, { conversationId, similarCases, customInstructions, invokedSkills, newSkills }) {
+  console.log(`\n${'─'.repeat(60)}`)
+  log('📩', `New message: "${request.message.slice(0, 120)}"`)
+  log('📂', `Sources: ${request.sources.length > 0 ? request.sources.join(', ') : '(none selected)'}`)
+  log('💬', `Conversation: ${conversationId}`)
+  if (similarCases.length > 0) {
+    log('📚', `Found ${similarCases.length} similar case(s)`)
+  }
+  if (customInstructions) {
+    log('🧭', `Custom instructions applied (${customInstructions.length} chars)`)
+  }
+  if (request.attachments.length > 0) {
+    log('📎', `Attachment(s): ${request.attachments.map(describeAttachment).join(', ')}`)
+  }
+  if (invokedSkills.length > 0) {
+    const described = invokedSkills.map(s => (newSkills.includes(s) ? s.name : `${s.name} (carried over)`))
+    log('⚡', `Skill(s) applied: ${described.join(', ')}`)
+  }
+}
+
+function markToolCallDone(parts, { toolName, parent, durationMs }) {
+  const part = parts.findLast(p => p.type === 'tool_call' && p.tool === toolName && p.parent === parent && !p.done)
+  if (!part) return
+
+  part.done = true
+  if (durationMs) part.durationMs = durationMs
+}
+
+function createTurnStream(res) {
+  const parts = []
+  const toolCalls = []
+  const nestedUsage = []
+  const pendingArtifacts = []
+  const toolStartTimes = new Map()
+  const callIdToName = new Map()
+  let sentContent = false
+
+  function sendText(text) {
+    sentContent = true
+    appendText(parts, text)
+    sendEvent(res, { type: 'text_delta', text })
+  }
+
+  function startToolCall({ name, arguments: rawArgs, callId, parent = null }) {
+    const toolName = name || UNKNOWN_TOOL
+    const toolArgs = rawArgs || '{}'
+
+    if (callId) {
+      toolStartTimes.set(callId, Date.now())
+      callIdToName.set(callId, toolName)
+    }
+
+    toolCalls.push({ name: toolName, arguments: toolArgs })
+    const input = sanitizeInput(toolArgs)
+    parts.push({ type: 'tool_call', tool: toolName, input, done: false, parent })
+
+    sentContent = true
+    log(parent ? NESTED_START : TOOL_START, `${toolName}(${toolArgs.slice(0, 100)})`)
+    sendEvent(res, { type: 'tool_start', tool: toolName, input, parent })
+  }
+
+  function finishToolCall({ name, callId, parent = null }) {
+    const toolName = name || callIdToName.get(callId) || UNKNOWN_TOOL
+    const startTime = callId ? toolStartTimes.get(callId) : undefined
+    const durationMs = startTime ? Date.now() - startTime : undefined
+
+    markToolCallDone(parts, { toolName, parent, durationMs })
+
+    log(
+      parent ? NESTED_DONE : TOOL_DONE,
+      durationMs ? `${toolName} completed in ${durationMs}ms` : `${toolName} completed`
+    )
+    sendEvent(res, { type: 'tool_end', tool: toolName, parent })
+  }
+
+  function flushArtifacts() {
+    while (pendingArtifacts.length > 0) {
+      const artifact = pendingArtifacts.shift()
+      parts.push({ type: 'artifact', ...artifact })
+      sendEvent(res, { type: 'artifact', ...artifact })
+    }
+  }
+
+  return {
+    parts,
+    toolCalls,
+    nestedUsage,
+    sendText,
+    startToolCall,
+    finishToolCall,
+    flushArtifacts,
+    queueArtifact: artifact => pendingArtifacts.push(artifact),
+    hasSentContent: () => sentContent,
+  }
+}
+
+function forwardStreamEvent(event, turn) {
+  if (event.type === 'raw_model_stream_event') {
+    if (event.data.type === 'output_text_delta') turn.sendText(event.data.delta)
+    return
+  }
+  if (event.type !== 'run_item_stream_event') return
+
+  const item = event.item
+  if (item.type === 'tool_call_item') {
+    turn.startToolCall(toolCallFromRawItem(item.rawItem))
+    return
+  }
+  if (item.type !== 'tool_call_output_item') return
+
+  turn.finishToolCall(toolCallFromRawItem(item.rawItem))
+  turn.flushArtifacts()
+}
+
+async function runAgentTurn(agent, agentInput, { session, previousResponseId, turn }) {
+  const stream = await run(agent, agentInput, {
+    stream: true,
+    maxTurns: config.agent.maxIterations,
+    session,
+    previousResponseId,
+  })
+
+  for await (const event of stream.toStream()) {
+    forwardStreamEvent(event, turn)
+  }
+
+  await stream.completed
+
+  const usage = formatUsage(stream.state?.usage)
+  if (usage) log('📊', usage)
+
+  return {
+    lastResponseId: stream.lastResponseId,
+    usage: sumUsage([extractUsage(stream.state?.usage), ...turn.nestedUsage]),
+    unpersistedItems: previousResponseId ? stream.history : null,
+  }
+}
+
+async function runAgentTurnWithRetry(agent, agentInput, { session, previousResponseId, turn }) {
+  try {
+    return await runAgentTurn(agent, agentInput, { session, previousResponseId, turn })
+  } catch (err) {
+    if (!previousResponseId || turn.hasSentContent()) throw err
+
+    log('♻️', `Retrying without previousResponseId (${err.message})`)
+    return runAgentTurn(agent, agentInput, { session, previousResponseId: undefined, turn })
+  }
+}
+
+function buildUserParts(request, newSkills) {
+  return [
+    ...newSkills.map(s => ({ type: 'skill', skillId: s.id, name: s.name })),
+    ...request.attachments.map(a => ({
+      type: 'attachment',
+      name: a.name,
+      truncated: Boolean(a.truncated),
+      imageId: a.imageId ?? null,
+    })),
+    { type: 'text', content: request.message },
+  ]
+}
+
 export default function chatRoute(conversationStore) {
   router.post('/', async (req, res) => {
-    const { sessionId, message, selectedSources, selectedRepos, profile, skillIds, attachments, timezone } = req.body
-
-    if (!message || typeof message !== 'string') {
-      return res.status(400).json({ error: 'A "message" string is required.' })
-    }
-
-    const trimmedMessage = message.trim()
-    if (trimmedMessage.length === 0) {
-      return res.status(400).json({ error: 'Message cannot be empty.' })
-    }
-    if (trimmedMessage.length > MAX_CHAT_MESSAGE_LENGTH) {
-      return res.status(400).json({ error: `Message is too long (max ${MAX_CHAT_MESSAGE_LENGTH} characters).` })
-    }
-
-    if (sessionId && !UUID_RE.test(sessionId)) {
-      return res.status(400).json({ error: 'Invalid session ID.' })
-    }
-
-    const { error: timezoneError, value: cleanTimezone } = parseTimezone(timezone)
-    if (timezoneError) return res.status(400).json({ error: timezoneError })
-
-    const { error: attachmentsError, value: cleanAttachments } = parseAttachments(attachments)
-    if (attachmentsError) return res.status(400).json({ error: attachmentsError })
-
-    const rawSources = Array.isArray(selectedSources) ? selectedSources : selectedRepos
-    const sources = Array.isArray(rawSources) ? rawSources : []
-
-    const cleanSkillIds = (Array.isArray(skillIds) ? skillIds : [])
-      .filter(id => Number.isInteger(id) && id > 0)
-      .slice(0, MAX_SKILLS_PER_REQUEST)
+    const { error, value: request } = parseChatRequest(req.body)
+    if (error) return res.status(400).json({ error })
 
     let configured
     let resolvedImages
     try {
       ;[configured, resolvedImages] = await Promise.all([
         isConfigured(),
-        resolveAttachmentImages(cleanAttachments, req.user.id),
+        resolveAttachmentImages(request.attachments, req.user.id),
       ])
     } catch (err) {
       console.error('Failed to load the attached images:', err)
@@ -183,10 +381,8 @@ export default function chatRoute(conversationStore) {
     }
     if (resolvedImages.error) return res.status(400).json({ error: resolvedImages.error })
 
-    const attachmentImages = resolvedImages.images
-
     const { conversationId, session, previousResponseId, isNewConversation } = await conversationStore.resolveWeb(
-      sessionId,
+      request.sessionId,
       req.user.id
     )
 
@@ -200,7 +396,7 @@ export default function chatRoute(conversationStore) {
     sendEvent(res, { type: 'session_id', sessionId: conversationId })
 
     const [similarCases, customInstructions, carriedSkillIds] = await Promise.all([
-      isNewConversation ? searchSimilarCases(trimmedMessage) : [],
+      isNewConversation ? searchSimilarCases(request.message) : [],
       getCustomInstructions(req.user.id).catch(err => {
         console.error('Failed to load custom instructions:', err)
         return null
@@ -211,203 +407,68 @@ export default function chatRoute(conversationStore) {
       }),
     ])
 
-    const activeSkillIds = [...new Set([...carriedSkillIds, ...cleanSkillIds])].slice(0, MAX_SKILLS_PER_REQUEST)
-    const invokedSkills =
-      activeSkillIds.length > 0
-        ? await getSkillsByIds(activeSkillIds, req.user.id).catch(err => {
-            console.error('Failed to load skills:', err)
-            return []
-          })
-        : []
-    console.log(`\n${'─'.repeat(60)}`)
-    log('📩', `New message: "${trimmedMessage.slice(0, 120)}"`)
-    log('📂', `Sources: ${sources.length > 0 ? sources.join(', ') : '(none selected)'}`)
-    log('💬', `Conversation: ${conversationId}`)
-    if (similarCases.length > 0) {
-      log('📚', `Found ${similarCases.length} similar case(s)`)
-    }
-    if (customInstructions) {
-      log('🧭', `Custom instructions applied (${customInstructions.length} chars)`)
-    }
-    if (cleanAttachments.length > 0) {
-      log('📎', `Attachment(s): ${cleanAttachments.map(describeAttachment).join(', ')}`)
-    }
-    const newlyInvokedSkills = invokedSkills.filter(s => cleanSkillIds.includes(s.id))
-    if (invokedSkills.length > 0) {
-      const described = invokedSkills.map(s => (newlyInvokedSkills.includes(s) ? s.name : `${s.name} (carried over)`))
-      log('⚡', `Skill(s) applied: ${described.join(', ')}`)
-    }
+    const activeSkillIds = [...new Set([...carriedSkillIds, ...request.skillIds])].slice(0, MAX_SKILLS_PER_REQUEST)
+    const invokedSkills = await loadInvokedSkills(activeSkillIds, req.user.id)
+    const newSkills = invokedSkills.filter(s => request.skillIds.includes(s.id))
+
+    logIncomingMessage(request, { conversationId, similarCases, customInstructions, invokedSkills, newSkills })
 
     const agentInput = buildAgentInput(
-      buildUserTurn(trimmedMessage, {
+      buildUserTurn(request.message, {
         similarCases,
-        commands: newlyInvokedSkills.map(s => s.name),
-        attachments: cleanAttachments,
+        commands: newSkills.map(s => s.name),
+        attachments: request.attachments,
       }),
-      attachmentImages
+      resolvedImages.images
     )
 
-    const assistantParts = []
-    let lastResponseId
-    let unpersistedItems = null
-    let runUsage = null
-
-    const publishedArtifacts = []
-    const toolCalls = []
-    const nestedUsage = []
+    const turn = createTurnStream(res)
 
     try {
-      const agent = await createAgent(sources, profile, {
+      const agent = await createAgent(request.sources, request.profile, {
         customInstructions: customInstructions ?? '',
         skills: invokedSkills,
-        skillArguments: trimmedMessage,
+        skillArguments: request.message,
         userId: req.user.id,
         conversationId,
-        onArtifactPublished: artifact => publishedArtifacts.push(artifact),
-        onNestedToolCall: startToolCall,
-        onNestedToolResult: finishToolCall,
-        onNestedUsage: usage => nestedUsage.push(usage),
-        timezone: cleanTimezone,
+        onArtifactPublished: turn.queueArtifact,
+        onNestedToolCall: turn.startToolCall,
+        onNestedToolResult: turn.finishToolCall,
+        onNestedUsage: usage => turn.nestedUsage.push(usage),
+        timezone: request.timezone,
       })
       const agentStart = Date.now()
 
       log('🚀', 'Agent started')
 
-      const toolStartTimes = new Map()
-      const callIdToName = new Map()
-      let sentContent = false
-
-      function startToolCall({ name, arguments: rawArgs, callId, parent = null }) {
-        const toolName = name || UNKNOWN_TOOL
-        const toolArgs = rawArgs || '{}'
-
-        if (callId) {
-          toolStartTimes.set(callId, Date.now())
-          callIdToName.set(callId, toolName)
-        }
-
-        toolCalls.push({ name: toolName, arguments: toolArgs })
-        const input = sanitizeInput(toolArgs)
-        assistantParts.push({ type: 'tool_call', tool: toolName, input, done: false, parent })
-
-        sentContent = true
-        log(parent ? NESTED_START : TOOL_START, `${toolName}(${toolArgs.slice(0, 100)})`)
-        sendEvent(res, { type: 'tool_start', tool: toolName, input, parent })
-      }
-
-      function finishToolCall({ name, callId, parent = null }) {
-        const toolName = name || callIdToName.get(callId) || UNKNOWN_TOOL
-        const startTime = callId ? toolStartTimes.get(callId) : undefined
-        const durationMs = startTime ? Date.now() - startTime : undefined
-
-        for (let i = assistantParts.length - 1; i >= 0; i--) {
-          const part = assistantParts[i]
-          if (part.type === 'tool_call' && part.tool === toolName && part.parent === parent && !part.done) {
-            part.done = true
-            if (durationMs) part.durationMs = durationMs
-            break
-          }
-        }
-
-        log(
-          parent ? NESTED_DONE : TOOL_DONE,
-          durationMs ? `${toolName} completed in ${durationMs}ms` : `${toolName} completed`
-        )
-        sendEvent(res, { type: 'tool_end', tool: toolName, parent })
-      }
-
-      async function runTurn(prevResponseId) {
-        const stream = await run(agent, agentInput, {
-          stream: true,
-          maxTurns: config.agent.maxIterations,
-          session,
-          previousResponseId: prevResponseId,
-        })
-
-        for await (const event of stream.toStream()) {
-          if (event.type === 'raw_model_stream_event') {
-            const data = event.data
-            if (data.type === 'output_text_delta') {
-              sentContent = true
-              appendText(assistantParts, data.delta)
-              sendEvent(res, { type: 'text_delta', text: data.delta })
-            }
-          } else if (event.type === 'run_item_stream_event') {
-            const item = event.item
-
-            if (item.type === 'tool_call_item') {
-              startToolCall(toolCallFromRawItem(item.rawItem))
-            } else if (item.type === 'tool_call_output_item') {
-              finishToolCall(toolCallFromRawItem(item.rawItem))
-
-              while (publishedArtifacts.length > 0) {
-                const artifact = publishedArtifacts.shift()
-                assistantParts.push({ type: 'artifact', ...artifact })
-                sendEvent(res, { type: 'artifact', ...artifact })
-              }
-            }
-          }
-        }
-
-        await stream.completed
-
-        runUsage = sumUsage([extractUsage(stream.state?.usage), ...nestedUsage])
-        const usage = formatUsage(stream.state?.usage)
-        if (usage) log('📊', usage)
-
-        unpersistedItems = prevResponseId ? stream.history : null
-        return stream.lastResponseId
-      }
-
-      try {
-        lastResponseId = await runTurn(previousResponseId)
-      } catch (err) {
-        if (previousResponseId && !sentContent) {
-          log('♻️', `Retrying without previousResponseId (${err.message})`)
-          lastResponseId = await runTurn(undefined)
-        } else {
-          throw err
-        }
-      }
+      const { lastResponseId, usage, unpersistedItems } = await runAgentTurnWithRetry(agent, agentInput, {
+        session,
+        previousResponseId,
+        turn,
+      })
 
       const totalMs = Date.now() - agentStart
       log('✅', `Done in ${totalMs}ms`)
 
-      if (isYoloMode(sources)) {
-        const footer = buildSourcesFooter(toolCalls)
-        if (footer) {
-          appendText(assistantParts, footer)
-          sendEvent(res, { type: 'text_delta', text: footer })
-        }
-      }
+      const footer = isYoloMode(request.sources) ? buildSourcesFooter(turn.toolCalls) : null
+      if (footer) turn.sendText(footer)
 
-      const finalText = assistantParts
+      const finalText = turn.parts
         .filter(p => p.type === 'text')
         .map(p => p.content)
         .join('')
       if (await isKnowledgeBaseConfigured()) {
-        const feedbackId = storePendingFeedback(trimmedMessage, finalText)
+        const feedbackId = storePendingFeedback(request.message, finalText)
         sendEvent(res, { type: 'feedback_id', feedbackId })
       }
-
-      const userParts = [
-        ...newlyInvokedSkills.map(s => ({ type: 'skill', skillId: s.id, name: s.name })),
-        ...cleanAttachments.map(a => ({
-          type: 'attachment',
-          name: a.name,
-          truncated: Boolean(a.truncated),
-          imageId: a.imageId ?? null,
-        })),
-        { type: 'text', content: trimmedMessage },
-      ]
 
       await conversationStore.saveTurn(conversationId, {
         lastResponseId,
         session,
         unpersistedItems,
         uiMessages: [
-          { role: 'user', parts: userParts },
-          { role: 'assistant', parts: assistantParts },
+          { role: 'user', parts: buildUserParts(request, newSkills) },
+          { role: 'assistant', parts: turn.parts },
         ],
       })
 
@@ -415,9 +476,9 @@ export default function chatRoute(conversationStore) {
         channel: AGENT_CHANNEL_WEB,
         status: RUN_STATUS_OK,
         userId: req.user.id,
-        usage: runUsage,
+        usage,
         durationMs: totalMs,
-        tools: toolNames(toolCalls),
+        tools: toolNames(turn.toolCalls),
       })
     } catch (err) {
       console.error('❌ Error:', err)

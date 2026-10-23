@@ -174,6 +174,38 @@ export function searchCode(repoFullName, query, options = {}) {
   return withClone(repoFullName, localPath => searchCodeAt(localPath, query, options))
 }
 
+function buildGrepArgs(localPath, query, { pathGlob, caseInsensitive, regex }) {
+  const args = ['-r', '-n', '-H', '-I', ...excludeDirArgs()]
+  if (caseInsensitive) args.push('-i')
+  args.push(regex ? '-E' : '-F')
+  if (pathGlob && typeof pathGlob === 'string') {
+    args.push(`--include=${pathGlob.slice(0, 128)}`)
+  }
+  args.push(...excludeEnvArgs())
+  args.push('-e', query, localPath)
+  return args
+}
+
+function parseGrepLine(line, prefix) {
+  const relPart = line.startsWith(prefix) ? line.slice(prefix.length) : line
+  const firstColon = relPart.indexOf(':')
+  if (firstColon === -1) return null
+
+  const path = relPart.slice(0, firstColon)
+  const rest = relPart.slice(firstColon + 1)
+  const secondColon = rest.indexOf(':')
+  if (secondColon === -1) return null
+
+  const lineNumber = Number.parseInt(rest.slice(0, secondColon), 10)
+  if (!Number.isFinite(lineNumber)) return null
+
+  const snippet = rest
+    .slice(secondColon + 1)
+    .trim()
+    .slice(0, 240)
+  return { path, line: lineNumber, snippet }
+}
+
 export async function searchCodeAt(
   localPath,
   query,
@@ -185,15 +217,7 @@ export async function searchCodeAt(
 
   const safeQuery = query.trim().slice(0, 256)
   const cap = clampInt(maxResults, 1, MAX_SEARCH_RESULTS, MAX_SEARCH_RESULTS)
-
-  const args = ['-r', '-n', '-H', '-I', ...excludeDirArgs()]
-  if (caseInsensitive) args.push('-i')
-  args.push(regex ? '-E' : '-F')
-  if (pathGlob && typeof pathGlob === 'string') {
-    args.push(`--include=${pathGlob.slice(0, 128)}`)
-  }
-  args.push(...excludeEnvArgs())
-  args.push('-e', safeQuery, localPath)
+  const args = buildGrepArgs(localPath, safeQuery, { pathGlob, caseInsensitive, regex })
 
   let stdout
   try {
@@ -211,20 +235,9 @@ export async function searchCodeAt(
   const prefix = localPath + '/'
   for (const line of lines) {
     if (items.length >= cap) break
-    const relPart = line.startsWith(prefix) ? line.slice(prefix.length) : line
-    const firstColon = relPart.indexOf(':')
-    if (firstColon === -1) continue
-    const path = relPart.slice(0, firstColon)
-    const rest = relPart.slice(firstColon + 1)
-    const secondColon = rest.indexOf(':')
-    if (secondColon === -1) continue
-    const lineNumber = Number.parseInt(rest.slice(0, secondColon), 10)
-    const snippet = rest
-      .slice(secondColon + 1)
-      .trim()
-      .slice(0, 240)
-    if (!Number.isFinite(lineNumber)) continue
-    items.push({ path, line: lineNumber, snippet })
+
+    const item = parseGrepLine(line, prefix)
+    if (item) items.push(item)
   }
 
   return {
