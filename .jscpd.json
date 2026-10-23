@@ -2,7 +2,7 @@
   "path": ["server/src", "client/src"],
   "ignore": ["**/*.test.js", "**/*.test.jsx", "**/__fixtures__/**"],
   "minTokens": 50,
-  "threshold": 1.62,
+  "threshold": 1.43,
   "reporters": ["console"],
   "gitignore": true
 }

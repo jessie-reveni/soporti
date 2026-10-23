@@ -50,18 +50,7 @@ export async function runReview(trigger, { logger = console, reviewerLogin = nul
       return
     }
 
-    const current = {
-      ...trigger,
-      headSha: pr.head?.sha ?? headSha,
-      headRef: pr.head?.ref ?? '',
-      baseRef: pr.base?.ref ?? trigger.baseRef,
-      baseSha: pr.base?.sha ?? null,
-      title: pr.title ?? trigger.title,
-      body: pr.body ?? '',
-      draft: Boolean(pr.draft),
-      authorLogin: pr.user?.login ?? trigger.authorLogin,
-      changedLines: (pr.additions ?? 0) + (pr.deletions ?? 0),
-    }
+    const current = refreshTrigger(trigger, pr)
     reviewedSha = current.headSha
     if (headSha !== PR_HEAD_PLACEHOLDER && current.headSha !== headSha) {
       logger.log(
@@ -154,22 +143,7 @@ export async function runReview(trigger, { logger = console, reviewerLogin = nul
 
     signal?.throwIfAborted()
 
-    try {
-      await createPullRequestReview(repoFullName, prNumber, {
-        commitId: reviewedSha,
-        body: renderReviewBody(review),
-        event,
-        comments: placed.inline.map(toReviewComment),
-      })
-    } catch (err) {
-      if (err.status !== 422) throw err
-      logger.warn(`[review] Inline review rejected for ${dedupeKey} (${err.message}); retrying body-only`)
-      await createPullRequestReview(repoFullName, prNumber, {
-        commitId: reviewedSha,
-        body: renderReviewBody({ ...review, isInlineInBody: true }),
-        event,
-      })
-    }
+    await postReview(trigger, { review, reviewedSha, logger })
 
     await resolveFixedThreads(
       { repoFullName, prNumber, headSha: reviewedSha, threads: fixedThreads },
@@ -195,6 +169,40 @@ export async function runReview(trigger, { logger = console, reviewerLogin = nul
   } finally {
     await removeEyes(repoFullName, prNumber, eyesId, logger)
     await workspace?.release()
+  }
+}
+
+function refreshTrigger(trigger, pr) {
+  return {
+    ...trigger,
+    headSha: pr.head?.sha ?? trigger.headSha,
+    headRef: pr.head?.ref ?? '',
+    baseRef: pr.base?.ref ?? trigger.baseRef,
+    baseSha: pr.base?.sha ?? null,
+    title: pr.title ?? trigger.title,
+    body: pr.body ?? '',
+    draft: Boolean(pr.draft),
+    authorLogin: pr.user?.login ?? trigger.authorLogin,
+    changedLines: (pr.additions ?? 0) + (pr.deletions ?? 0),
+  }
+}
+
+async function postReview({ repoFullName, prNumber, dedupeKey }, { review, reviewedSha, logger }) {
+  try {
+    await createPullRequestReview(repoFullName, prNumber, {
+      commitId: reviewedSha,
+      body: renderReviewBody(review),
+      event: review.event,
+      comments: review.findings.inline.map(toReviewComment),
+    })
+  } catch (err) {
+    if (err.status !== 422) throw err
+    logger.warn(`[review] Inline review rejected for ${dedupeKey} (${err.message}); retrying body-only`)
+    await createPullRequestReview(repoFullName, prNumber, {
+      commitId: reviewedSha,
+      body: renderReviewBody({ ...review, isInlineInBody: true }),
+      event: review.event,
+    })
   }
 }
 

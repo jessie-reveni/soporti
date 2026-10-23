@@ -34,7 +34,7 @@ export default function ChatPanel({
 }) {
   const [tourOpen, setTourOpen] = useState(() => !localStorage.getItem(TOUR_SEEN_KEY))
 
-  const stats = useAuthedResource(getStats, 'stats', token, null)
+  const stats = useAuthedResource(getStats, { key: 'stats', token, initialValue: null })
   const { scrollRef, contentRef, pinToBottom, isFollowing } = useAutoScroll(conversationKey)
   const rail = useMessageRail(scrollRef, contentRef, messages)
   const {

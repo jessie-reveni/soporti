@@ -237,7 +237,7 @@ function trimTrail(walker) {
   }
 }
 
-export function updateWalker(walker, dt, width, height, walkers) {
+export function updateWalker(walker, dt, { width, height, walkers }) {
   let step = walker.speed * dt
 
   while (step > 0) {

@@ -63,7 +63,7 @@ describe('updateWalker', () => {
   it('advances along its direction', () => {
     const walker = walkerAt(OFFSET_X, OFFSET_Y, { speed: 120 })
 
-    updateWalker(walker, 0.1, 1200, 800, [walker])
+    updateWalker(walker, 0.1, { width: 1200, height: 800, walkers: [walker] })
 
     expect(walker.x).toBe(OFFSET_X + 12)
     expect(walker.y).toBe(OFFSET_Y)
@@ -76,7 +76,7 @@ describe('updateWalker', () => {
     const positions = []
     for (let frame = 0; frame < 40; frame++) {
       const before = `${walker.x},${walker.y}`
-      updateWalker(walker, 0.05, 1200, 800, [walker])
+      updateWalker(walker, 0.05, { width: 1200, height: 800, walkers: [walker] })
       positions.push(before !== `${walker.x},${walker.y}`)
     }
 
@@ -88,13 +88,13 @@ describe('updateWalker', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.2)
     const walker = walkerAt(OFFSET_X + CELL, OFFSET_Y + CELL, { speed: CELL })
 
-    updateWalker(walker, 1, 1200, 800, [walker])
+    updateWalker(walker, 1, { width: 1200, height: 800, walkers: [walker] })
 
     expect(walker.dir.dx).toBe(1)
     expect(walker.trail).toEqual([{ x: OFFSET_X + CELL, y: OFFSET_Y + CELL }])
 
     Math.random.mockReturnValue(0.6)
-    updateWalker(walker, 1, 1200, 800, [walker])
+    updateWalker(walker, 1, { width: 1200, height: 800, walkers: [walker] })
 
     expect(walker.dir.dy).toBe(1)
     expect(walker.trail).toEqual([
@@ -114,7 +114,7 @@ describe('updateWalker', () => {
       ],
     })
 
-    updateWalker(walker, 0, 4000, 800, [walker])
+    updateWalker(walker, 0, { width: 4000, height: 800, walkers: [walker] })
 
     expect(walker.trail).toEqual([
       { x: 700, y: 0 },
@@ -125,7 +125,7 @@ describe('updateWalker', () => {
   it('turns at a grid stop instead of leaving the canvas', () => {
     const walker = walkerAt(OFFSET_X + CELL, OFFSET_Y, { dir: { dx: 1, dy: 0 }, speed: 2400 })
 
-    updateWalker(walker, 1, CELL, CELL, [walker])
+    updateWalker(walker, 1, { width: CELL, height: CELL, walkers: [walker] })
 
     expect(Number.isFinite(walker.x)).toBe(true)
     expect(Math.abs(walker.dir.dx) + Math.abs(walker.dir.dy)).toBe(1)

@@ -3,6 +3,7 @@ import globals from 'globals'
 import react from 'eslint-plugin-react'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
+import sonarjs from 'eslint-plugin-sonarjs'
 
 export default [
   { ignores: ['dist'] },
@@ -20,6 +21,7 @@ export default [
       react,
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
+      sonarjs,
     },
     settings: {
       react: { version: 'detect' },
@@ -33,6 +35,9 @@ export default [
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^React$' }],
       'no-empty': ['error', { allowEmptyCatch: true }],
       'no-console': 'warn',
+      'max-depth': ['error', 3],
+      'max-params': ['error', 4],
+      'sonarjs/cognitive-complexity': ['error', 15],
     },
   },
   {

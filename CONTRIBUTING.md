@@ -127,6 +127,8 @@ npm run lint
 
 Fix all warnings and errors before pushing.
 
+ESLint caps nesting depth (3), parameters per function (4) and cognitive complexity (15, via `eslint-plugin-sonarjs`) in both packages. When a function goes over, split it or pass an options object instead of disabling the rule.
+
 Besides ESLint and Prettier, `lint` runs two repo-wide checks you can also run on their own:
 
 - `npm run knip` fails on unused files, exports and dependencies across the root, `server/` and `client/` (config in `knip.json`). Delete what it reports instead of ignoring it.

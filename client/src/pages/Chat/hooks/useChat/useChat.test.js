@@ -97,7 +97,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     await act(async () => {
-      await result.current.sendMessage('hi', ['org/repo'], 'support')
+      await result.current.sendMessage('hi', { selectedSources: ['org/repo'], profile: 'support' })
     })
 
     expect(result.current.messages.length).toBe(2)
@@ -114,7 +114,11 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     await act(async () => {
-      await result.current.sendMessage('hi', ['org/repo'], 'support', [{ id: 5, name: 'bug-triage' }])
+      await result.current.sendMessage('hi', {
+        selectedSources: ['org/repo'],
+        profile: 'support',
+        skills: [{ id: 5, name: 'bug-triage' }],
+      })
     })
 
     expect(result.current.messages[0]).toEqual({
@@ -136,7 +140,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     await act(async () => {
-      await result.current.sendMessage('hi', ['org/repo'], 'support')
+      await result.current.sendMessage('hi', { selectedSources: ['org/repo'], profile: 'support' })
     })
 
     const [, options] = global.fetch.mock.calls[0]
@@ -151,13 +155,11 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     await act(async () => {
-      await result.current.sendMessage(
-        'summarize it',
-        ['org/repo'],
-        'support',
-        [],
-        [{ name: 'spec.pdf', text: 'The API returns 402.', truncated: true }]
-      )
+      await result.current.sendMessage('summarize it', {
+        selectedSources: ['org/repo'],
+        profile: 'support',
+        attachments: [{ name: 'spec.pdf', text: 'The API returns 402.', truncated: true }],
+      })
     })
 
     expect(result.current.messages[0]).toEqual({
@@ -180,13 +182,11 @@ describe('useChat', () => {
     const imageId = '22222222-2222-4222-8222-222222222222'
 
     await act(async () => {
-      await result.current.sendMessage(
-        'what is this?',
-        ['org/repo'],
-        'support',
-        [],
-        [{ name: 'error.png', imageId, previewUrl: 'blob:local' }]
-      )
+      await result.current.sendMessage('what is this?', {
+        selectedSources: ['org/repo'],
+        profile: 'support',
+        attachments: [{ name: 'error.png', imageId, previewUrl: 'blob:local' }],
+      })
     })
 
     expect(result.current.messages[0].attachments).toEqual([{ name: 'error.png', imageId }])
@@ -201,7 +201,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     await act(async () => {
-      await result.current.sendMessage('hi', ['org/repo'], 'support')
+      await result.current.sendMessage('hi', { selectedSources: ['org/repo'], profile: 'support' })
     })
 
     expect(result.current.messages[0]).toEqual({ role: 'user', content: 'hi' })
@@ -213,7 +213,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     await act(async () => {
-      await result.current.sendMessage('   ', [], 'support')
+      await result.current.sendMessage('   ', { selectedSources: [], profile: 'support' })
     })
 
     expect(global.fetch).not.toHaveBeenCalled()
@@ -227,12 +227,12 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     act(() => {
-      result.current.sendMessage('first', [], 'support')
+      result.current.sendMessage('first', { selectedSources: [], profile: 'support' })
     })
     await waitFor(() => expect(result.current.isLoading).toBe(true))
 
     await act(async () => {
-      await result.current.sendMessage('second', [], 'support')
+      await result.current.sendMessage('second', { selectedSources: [], profile: 'support' })
     })
 
     expect(global.fetch).toHaveBeenCalledTimes(1)
@@ -262,7 +262,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     await act(async () => {
-      await result.current.sendMessage('hi', [], 'support')
+      await result.current.sendMessage('hi', { selectedSources: [], profile: 'support' })
     })
 
     expect(result.current.messages[1].parts).toEqual([{ type: 'text', content: 'Hello' }])
@@ -284,7 +284,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     await act(async () => {
-      await result.current.sendMessage('find auth', [], 'tech')
+      await result.current.sendMessage('find auth', { selectedSources: [], profile: 'tech' })
     })
 
     const parts = result.current.messages[1].parts
@@ -307,7 +307,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     await act(async () => {
-      await result.current.sendMessage('test', [], 'support')
+      await result.current.sendMessage('test', { selectedSources: [], profile: 'support' })
     })
 
     const parts = result.current.messages[1].parts
@@ -328,7 +328,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     await act(async () => {
-      await result.current.sendMessage('hi', [], 'support')
+      await result.current.sendMessage('hi', { selectedSources: [], profile: 'support' })
     })
 
     expect(result.current.messages[1].feedbackId).toBe(42)
@@ -344,7 +344,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', onAuthError))
 
     await act(async () => {
-      await result.current.sendMessage('hi', [], 'support')
+      await result.current.sendMessage('hi', { selectedSources: [], profile: 'support' })
     })
 
     expect(onAuthError).toHaveBeenCalled()
@@ -359,7 +359,7 @@ describe('useChat', () => {
     expect(result.current.sessionId).toBeNull()
 
     await act(async () => {
-      await result.current.sendMessage('hi', [], 'support')
+      await result.current.sendMessage('hi', { selectedSources: [], profile: 'support' })
     })
 
     expect(result.current.sessionId).toBe('sess-1')
@@ -373,10 +373,10 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     await act(async () => {
-      await result.current.sendMessage('hi', [], 'support')
+      await result.current.sendMessage('hi', { selectedSources: [], profile: 'support' })
     })
     await act(async () => {
-      await result.current.sendMessage('and then?', [], 'support')
+      await result.current.sendMessage('and then?', { selectedSources: [], profile: 'support' })
     })
 
     expect(JSON.parse(global.fetch.mock.calls[0][1].body).sessionId).toBeNull()
@@ -413,7 +413,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     await act(async () => {
-      await result.current.sendMessage('hi', [], 'support')
+      await result.current.sendMessage('hi', { selectedSources: [], profile: 'support' })
     })
     expect(result.current.messages.length).toBe(2)
 
@@ -551,7 +551,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     await act(async () => {
-      await result.current.sendMessage('test', [], 'support')
+      await result.current.sendMessage('test', { selectedSources: [], profile: 'support' })
     })
 
     const parts = result.current.messages[1].parts
@@ -567,7 +567,7 @@ describe('useChat', () => {
     expect(result.current.completedRuns).toBe(0)
 
     await act(async () => {
-      await result.current.sendMessage('hi', [], 'support')
+      await result.current.sendMessage('hi', { selectedSources: [], profile: 'support' })
     })
 
     expect(result.current.completedRuns).toBe(1)
@@ -580,7 +580,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     act(() => {
-      result.current.sendMessage('long research', [], 'support')
+      result.current.sendMessage('long research', { selectedSources: [], profile: 'support' })
     })
     stream.push({ type: 'session_id', sessionId: 'sess-1' })
     await waitFor(() => expect(result.current.sessionId).toBe('sess-1'))
@@ -620,7 +620,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     act(() => {
-      result.current.sendMessage('long research', [], 'support')
+      result.current.sendMessage('long research', { selectedSources: [], profile: 'support' })
     })
     stream.push({ type: 'session_id', sessionId: 'sess-1' })
     await waitFor(() => expect(result.current.sessionId).toBe('sess-1'))
@@ -646,7 +646,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     act(() => {
-      result.current.sendMessage('why did the payout fail?', [], 'support')
+      result.current.sendMessage('why did the payout fail?', { selectedSources: [], profile: 'support' })
     })
     first.push({ type: 'session_id', sessionId: 'sess-1' })
     await waitFor(() => expect(result.current.sessionId).toBe('sess-1'))
@@ -655,7 +655,7 @@ describe('useChat', () => {
       result.current.newChat()
     })
     act(() => {
-      result.current.sendMessage('how does auth work?', [], 'support')
+      result.current.sendMessage('how does auth work?', { selectedSources: [], profile: 'support' })
     })
     second.push({ type: 'session_id', sessionId: 'sess-2' })
     await waitFor(() => expect(result.current.sessionId).toBe('sess-2'))
@@ -679,7 +679,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn()))
 
     act(() => {
-      result.current.sendMessage('long research', [], 'support')
+      result.current.sendMessage('long research', { selectedSources: [], profile: 'support' })
     })
     first.push({ type: 'session_id', sessionId: 'sess-1' })
     await waitFor(() => expect(result.current.sessionId).toBe('sess-1'))
@@ -688,7 +688,7 @@ describe('useChat', () => {
       result.current.newChat()
     })
     act(() => {
-      result.current.sendMessage('quick question', [], 'support')
+      result.current.sendMessage('quick question', { selectedSources: [], profile: 'support' })
     })
     second.push({ type: 'session_id', sessionId: 'sess-2' })
     await waitFor(() => expect(result.current.sessionId).toBe('sess-2'))
@@ -716,7 +716,7 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat('token', vi.fn(), onArtifactPublished))
 
     act(() => {
-      result.current.sendMessage('build the runbook', [], 'support')
+      result.current.sendMessage('build the runbook', { selectedSources: [], profile: 'support' })
     })
     first.push({ type: 'session_id', sessionId: 'sess-1' })
     await waitFor(() => expect(result.current.sessionId).toBe('sess-1'))
@@ -725,7 +725,7 @@ describe('useChat', () => {
       result.current.newChat()
     })
     act(() => {
-      result.current.sendMessage('and the incident report', [], 'support')
+      result.current.sendMessage('and the incident report', { selectedSources: [], profile: 'support' })
     })
     second.push({ type: 'session_id', sessionId: 'sess-2' })
     await waitFor(() => expect(result.current.sessionId).toBe('sess-2'))

@@ -37,6 +37,50 @@ async function loadSlackUserContext(slackUserId, slackUserName) {
   }
 }
 
+function resetTurn(turn) {
+  turn.text = ''
+  turn.sentText = false
+  turn.toolCalls.length = 0
+  turn.nestedUsage.length = 0
+  turn.callIdToTaskId.clear()
+}
+
+async function forwardTextDelta(data, turn, onProgress) {
+  if (data.type !== 'output_text_delta') return
+
+  turn.sentText = true
+  turn.text += data.delta
+  await notifyProgress(onProgress, { type: 'text_delta', delta: data.delta })
+}
+
+async function startToolCall(rawItem, turn, onProgress) {
+  const toolName = rawItem?.name || UNKNOWN_TOOL
+  const toolArgs = rawItem?.arguments || '{}'
+  const taskId = `task-${turn.toolCalls.length}`
+
+  log('  →', toolName)
+  turn.toolCalls.push({ name: toolName, arguments: toolArgs })
+  if (rawItem?.callId) turn.callIdToTaskId.set(rawItem.callId, taskId)
+
+  await notifyProgress(onProgress, { type: 'tool_start', taskId, name: toolName, arguments: toolArgs })
+}
+
+async function forwardRunItem(item, turn, onProgress) {
+  if (item.type === 'tool_call_item') {
+    await startToolCall(item.rawItem, turn, onProgress)
+    return
+  }
+  if (item.type !== 'tool_call_output_item') return
+
+  const taskId = turn.callIdToTaskId.get(item.rawItem?.callId)
+  if (taskId) await notifyProgress(onProgress, { type: 'tool_end', taskId })
+}
+
+async function forwardStreamEvent(event, turn, onProgress) {
+  if (event.type === 'raw_model_stream_event') await forwardTextDelta(event.data, turn, onProgress)
+  if (event.type === 'run_item_stream_event') await forwardRunItem(event.item, turn, onProgress)
+}
+
 export async function processMessage({
   message,
   selectedSources,
@@ -61,32 +105,24 @@ export async function processMessage({
     log('🧭', `Custom instructions applied (${customInstructions.length} chars)`)
   }
 
-  const toolCalls = []
-  const nestedUsage = []
+  const turn = { text: '', sentText: false, toolCalls: [], nestedUsage: [], callIdToTaskId: new Map() }
 
   const agent = await createAgent(selectedSources, profile, {
     customInstructions,
     userId,
-    onNestedToolCall: call => toolCalls.push(call),
-    onNestedUsage: usage => nestedUsage.push(usage),
+    onNestedToolCall: call => turn.toolCalls.push(call),
+    onNestedUsage: usage => turn.nestedUsage.push(usage),
   })
   const agentInput = buildUserTurn(message, { similarCases })
   const startTime = Date.now()
-  const callIdToTaskId = new Map()
-  let fullText = ''
   let runUsage = null
 
   log('🚀', `Agent started for: "${message.slice(0, 120)}"`)
 
-  let sentText = false
   let unpersistedItems = null
 
   async function runTurn(prevResponseId) {
-    fullText = ''
-    toolCalls.length = 0
-    nestedUsage.length = 0
-    callIdToTaskId.clear()
-    sentText = false
+    resetTurn(turn)
 
     const stream = await run(agent, agentInput, {
       stream: true,
@@ -96,36 +132,12 @@ export async function processMessage({
     })
 
     for await (const event of stream.toStream()) {
-      if (event.type === 'raw_model_stream_event') {
-        const data = event.data
-        if (data.type === 'output_text_delta') {
-          sentText = true
-          fullText += data.delta
-          await notifyProgress(onProgress, { type: 'text_delta', delta: data.delta })
-        }
-      } else if (event.type === 'run_item_stream_event') {
-        const item = event.item
-        if (item.type === 'tool_call_item') {
-          const toolName = item.rawItem?.name || UNKNOWN_TOOL
-          const toolArgs = item.rawItem?.arguments || '{}'
-          const taskId = `task-${toolCalls.length}`
-          const callId = item.rawItem?.callId
-
-          log('  →', toolName)
-          toolCalls.push({ name: toolName, arguments: toolArgs })
-          if (callId) callIdToTaskId.set(callId, taskId)
-
-          await notifyProgress(onProgress, { type: 'tool_start', taskId, name: toolName, arguments: toolArgs })
-        } else if (item.type === 'tool_call_output_item') {
-          const taskId = callIdToTaskId.get(item.rawItem?.callId)
-          if (taskId) await notifyProgress(onProgress, { type: 'tool_end', taskId })
-        }
-      }
+      await forwardStreamEvent(event, turn, onProgress)
     }
 
     await stream.completed
 
-    runUsage = sumUsage([extractUsage(stream.state?.usage), ...nestedUsage])
+    runUsage = sumUsage([extractUsage(stream.state?.usage), ...turn.nestedUsage])
     const usage = formatUsage(stream.state?.usage)
     if (usage) log('📊', usage)
 
@@ -137,7 +149,7 @@ export async function processMessage({
     try {
       return await runTurn(previousResponseId)
     } catch (err) {
-      if (!previousResponseId || sentText) throw err
+      if (!previousResponseId || turn.sentText) throw err
 
       log('♻️', `Retrying without previousResponseId (${err.message})`)
       return runTurn(undefined)
@@ -153,7 +165,7 @@ export async function processMessage({
   }
 
   const durationMs = Date.now() - startTime
-  log('✅', `Done in ${durationMs}ms (${toolCalls.length} tool calls)`)
+  log('✅', `Done in ${durationMs}ms (${turn.toolCalls.length} tool calls)`)
 
   await recordAgentRun({
     channel: AGENT_CHANNEL_SLACK,
@@ -161,10 +173,10 @@ export async function processMessage({
     userId,
     usage: runUsage,
     durationMs,
-    tools: toolNames(toolCalls),
+    tools: toolNames(turn.toolCalls),
   })
 
-  const footer = isYoloMode(selectedSources) ? buildSourcesFooter(toolCalls) : ''
+  const footer = isYoloMode(selectedSources) ? buildSourcesFooter(turn.toolCalls) : ''
 
-  return { text: fullText + footer, footer, toolCalls, durationMs, lastResponseId, unpersistedItems }
+  return { text: turn.text + footer, footer, toolCalls: turn.toolCalls, durationMs, lastResponseId, unpersistedItems }
 }

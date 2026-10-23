@@ -76,6 +76,20 @@ function extractBlockText(block) {
   }
 }
 
+function blockChildrenPath(blockId, cursor) {
+  const cursorParam = cursor ? `&start_cursor=${cursor}` : ''
+  return `/blocks/${blockId}/children?page_size=100${cursorParam}`
+}
+
+async function extractBlockLines(block, depth, counter) {
+  const text = extractBlockText(block)
+  const lines = text === null ? [] : [text]
+  if (!block.has_children) return lines
+
+  const children = await fetchChildBlocks(block.id, depth + 1, counter)
+  return [...lines, ...children.map(l => `  ${l}`)]
+}
+
 async function fetchChildBlocks(blockId, depth = 0, counter = { count: 0 }) {
   if (depth >= MAX_BLOCK_DEPTH || counter.count >= MAX_BLOCKS) return []
 
@@ -83,20 +97,13 @@ async function fetchChildBlocks(blockId, depth = 0, counter = { count: 0 }) {
   let cursor
 
   do {
-    const path = `/blocks/${blockId}/children?page_size=100${cursor ? `&start_cursor=${cursor}` : ''}`
-    const data = await request('GET', path)
+    const data = await request('GET', blockChildrenPath(blockId, cursor))
 
     for (const block of data.results || []) {
       if (counter.count >= MAX_BLOCKS) break
       counter.count++
 
-      const text = extractBlockText(block)
-      if (text !== null) lines.push(text)
-
-      if (block.has_children && depth + 1 < MAX_BLOCK_DEPTH) {
-        const children = await fetchChildBlocks(block.id, depth + 1, counter)
-        lines.push(...children.map(l => `  ${l}`))
-      }
+      lines.push(...(await extractBlockLines(block, depth, counter)))
     }
 
     cursor = data.has_more && counter.count < MAX_BLOCKS ? data.next_cursor : null
@@ -132,45 +139,50 @@ export async function searchPages(query) {
 
 const MAX_DB_ROWS = 50
 
+function stringifyDefined(value) {
+  return value != null ? String(value) : ''
+}
+
+function extractComputedValue(computed) {
+  if (!computed) return ''
+  return stringifyDefined(computed[computed.type])
+}
+
+function extractDateRange(date) {
+  if (!date) return ''
+  return date.end ? `${date.start} → ${date.end}` : date.start
+}
+
+const PROPERTY_EXTRACTORS = {
+  title: prop => extractTextFromRichText(prop.title),
+  rich_text: prop => extractTextFromRichText(prop.rich_text),
+  number: prop => stringifyDefined(prop.number),
+  select: prop => prop.select?.name || '',
+  multi_select: prop => (prop.multi_select || []).map(s => s.name).join(', '),
+  status: prop => prop.status?.name || '',
+  date: prop => extractDateRange(prop.date),
+  checkbox: prop => (prop.checkbox ? 'Yes' : 'No'),
+  url: prop => prop.url || '',
+  email: prop => prop.email || '',
+  phone_number: prop => prop.phone_number || '',
+  people: prop => (prop.people || []).map(p => p.name || p.id).join(', '),
+  relation: prop => `(${(prop.relation || []).length} relations)`,
+  formula: prop => extractComputedValue(prop.formula),
+  rollup: prop => extractComputedValue(prop.rollup),
+}
+
 function extractPropertyValue(prop) {
-  if (!prop) return ''
-  switch (prop.type) {
-    case 'title':
-      return extractTextFromRichText(prop.title)
-    case 'rich_text':
-      return extractTextFromRichText(prop.rich_text)
-    case 'number':
-      return prop.number != null ? String(prop.number) : ''
-    case 'select':
-      return prop.select?.name || ''
-    case 'multi_select':
-      return (prop.multi_select || []).map(s => s.name).join(', ')
-    case 'status':
-      return prop.status?.name || ''
-    case 'date':
-      if (!prop.date) return ''
-      return prop.date.end ? `${prop.date.start} → ${prop.date.end}` : prop.date.start
-    case 'checkbox':
-      return prop.checkbox ? 'Yes' : 'No'
-    case 'url':
-      return prop.url || ''
-    case 'email':
-      return prop.email || ''
-    case 'phone_number':
-      return prop.phone_number || ''
-    case 'people':
-      return (prop.people || []).map(p => p.name || p.id).join(', ')
-    case 'relation':
-      return `(${(prop.relation || []).length} relations)`
-    case 'formula':
-      if (!prop.formula) return ''
-      return prop.formula[prop.formula.type] != null ? String(prop.formula[prop.formula.type]) : ''
-    case 'rollup':
-      if (!prop.rollup) return ''
-      return prop.rollup[prop.rollup.type] != null ? String(prop.rollup[prop.rollup.type]) : ''
-    default:
-      return ''
+  if (!prop || !Object.hasOwn(PROPERTY_EXTRACTORS, prop.type)) return ''
+  return PROPERTY_EXTRACTORS[prop.type](prop)
+}
+
+function extractRowEntry(row) {
+  const entry = {}
+  for (const [key, prop] of Object.entries(row.properties || {})) {
+    const value = extractPropertyValue(prop)
+    if (value) entry[key] = value
   }
+  return entry
 }
 
 async function queryDatabase(databaseId) {
@@ -183,12 +195,7 @@ async function queryDatabase(databaseId) {
 
     for (const row of data.results || []) {
       if (rows.length >= MAX_DB_ROWS) break
-      const entry = {}
-      for (const [key, prop] of Object.entries(row.properties || {})) {
-        const val = extractPropertyValue(prop)
-        if (val) entry[key] = val
-      }
-      rows.push(entry)
+      rows.push(extractRowEntry(row))
     }
 
     cursor = data.has_more && rows.length < MAX_DB_ROWS ? data.next_cursor : null
@@ -203,7 +210,7 @@ export async function getPage(pageId) {
     const contentLines = await fetchChildBlocks(pageId)
 
     if (contentLines.length === 0) {
-      const blocksData = await request('GET', `/blocks/${pageId}/children?page_size=100`)
+      const blocksData = await request('GET', blockChildrenPath(pageId))
       const dbBlock = (blocksData.results || []).find(b => b.type === 'child_database')
       if (dbBlock) {
         const rows = await queryDatabase(dbBlock.id)
