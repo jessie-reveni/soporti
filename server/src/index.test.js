@@ -31,6 +31,10 @@ vi.mock('./middleware/auth.js', () => ({
   createSession: vi.fn(() => 'valid-token-123'),
 }))
 
+vi.mock('./langfuse/tracing.js', () => ({
+  registerLangfuseTracing: vi.fn(),
+}))
+
 vi.mock('./db/index.js', () => ({
   runMigrations: vi.fn().mockResolvedValue(undefined),
   shutdown: vi.fn(),
@@ -250,5 +254,11 @@ describe('module-level setup', () => {
     const conversationsRoute = (await import('./routes/conversations.js')).default
     expect(conversationsRoute).toHaveBeenCalledTimes(1)
     expect(conversationsRoute.mock.calls[0][0]).toBeDefined()
+  })
+
+  it('registers the Langfuse trace processor once at boot, replacing the default OpenAI exporter', async () => {
+    const { registerLangfuseTracing } = await import('./langfuse/tracing.js')
+    expect(registerLangfuseTracing).toHaveBeenCalledTimes(1)
+    expect(registerLangfuseTracing).toHaveBeenCalledWith()
   })
 })

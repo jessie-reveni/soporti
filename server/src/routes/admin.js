@@ -33,6 +33,14 @@ import {
   setBetterstackPassword,
 } from '../betterstack/settings.js'
 import {
+  getLangfuseConfig,
+  setLangfusePublicKey,
+  setLangfuseSecretKey,
+  setLangfuseHost,
+  setLangfuseMetadataOnly,
+} from '../langfuse/settings.js'
+import { getLastExportError, resetExportFailure } from '../langfuse/client.js'
+import {
   getHelpjuiceApiKey,
   setHelpjuiceApiKey,
   getHelpjuiceAccount,
@@ -131,6 +139,8 @@ const VECTOR_STORE_ID_MAX_LENGTH = 200
 const SHOPIFY_TOKEN_URL_MAX_LENGTH = 2000
 const SHOPIFY_TOKEN_AUTHORIZATION_MAX_LENGTH = 2000
 const HTTP_PROTOCOLS = ['http:', 'https:']
+const LANGFUSE_HOST_MAX_LENGTH = 300
+const TRAILING_SLASHES_RE = /\/+$/
 const LINE_BREAK_RE = /[\r\n]/
 const INVALID_HOST_ERROR = 'That does not look like a valid connect host (e.g. "eu-nbg-2-connect.betterstackdata.com").'
 const REPO_TOOL_GROUP = { id: 'repo', label: 'Repositories', tools: [...REPO_TOOL_NAMES] }
@@ -166,6 +176,43 @@ function parseSecret(value, { field, maxLength, message }) {
 
 function isHttpUrl(value) {
   return URL.canParse(value) && HTTP_PROTOCOLS.includes(new URL(value).protocol)
+}
+
+function parseLangfuseHost(value) {
+  if (typeof value !== 'string') return { error: '"host" must be a string (empty to clear it).' }
+
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return { value: trimmed }
+  if (trimmed.length > LANGFUSE_HOST_MAX_LENGTH || !isHttpUrl(trimmed)) {
+    return { error: 'The Langfuse host must be an http(s) URL (e.g. "https://cloud.langfuse.com").' }
+  }
+
+  const url = new URL(trimmed)
+  if (url.username || url.password || url.search || url.hash) {
+    return { error: 'The Langfuse host must not include credentials, a query or a fragment.' }
+  }
+
+  return { value: `${url.origin}${url.pathname}`.replace(TRAILING_SLASHES_RE, '') }
+}
+
+function langfuseKeyHandler({ field, label, save, flag }) {
+  return async (req, res) => {
+    const parsed = parseSecret(req.body?.[field], {
+      field,
+      maxLength: API_KEY_MAX_LENGTH,
+      message: `That does not look like a valid Langfuse ${label}.`,
+    })
+    if (parsed.error) return res.status(400).json({ error: parsed.error })
+
+    try {
+      await save(parsed.value)
+      resetExportFailure()
+      res.json({ [flag]: parsed.value.length > 0 })
+    } catch (err) {
+      console.error(`Admin set langfuse ${label} error:`, err.name)
+      res.status(500).json({ error: `Failed to save the Langfuse ${label}.` })
+    }
+  }
 }
 
 function parseShopifyTokenUrl(value) {
@@ -1239,6 +1286,72 @@ router.put('/config/betterstack/connection-password', async (req, res) => {
   } catch (err) {
     console.error('Admin set betterstack connection password error:', err)
     res.status(500).json({ error: 'Failed to save the Better Stack connection password.' })
+  }
+})
+
+router.get('/config/langfuse', async (_req, res) => {
+  try {
+    const config = await getLangfuseConfig()
+    res.json({
+      publicKeyConfigured: Boolean(config.publicKey),
+      secretKeyConfigured: Boolean(config.secretKey),
+      host: config.host ?? '',
+      metadataOnly: config.metadataOnly,
+      lastExportError: getLastExportError(),
+    })
+  } catch (err) {
+    console.error('Admin get langfuse config error:', err)
+    res.status(500).json({ error: 'Failed to read the Langfuse settings.' })
+  }
+})
+
+router.put(
+  '/config/langfuse/public-key',
+  langfuseKeyHandler({
+    field: 'publicKey',
+    label: 'public key',
+    save: setLangfusePublicKey,
+    flag: 'publicKeyConfigured',
+  })
+)
+
+router.put(
+  '/config/langfuse/secret-key',
+  langfuseKeyHandler({
+    field: 'secretKey',
+    label: 'secret key',
+    save: setLangfuseSecretKey,
+    flag: 'secretKeyConfigured',
+  })
+)
+
+router.put('/config/langfuse/host', async (req, res) => {
+  const parsed = parseLangfuseHost(req.body?.host)
+  if (parsed.error) return res.status(400).json({ error: parsed.error })
+
+  try {
+    await setLangfuseHost(parsed.value)
+    resetExportFailure()
+    res.json({ host: parsed.value })
+  } catch (err) {
+    console.error('Admin set langfuse host error:', err)
+    res.status(500).json({ error: 'Failed to save the Langfuse host.' })
+  }
+})
+
+router.put('/config/langfuse/metadata-only', async (req, res) => {
+  const { enabled } = req.body ?? {}
+
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: '"enabled" must be a boolean.' })
+  }
+
+  try {
+    await setLangfuseMetadataOnly(enabled)
+    res.json({ metadataOnly: enabled })
+  } catch (err) {
+    console.error('Admin set langfuse metadata-only error:', err)
+    res.status(500).json({ error: 'Failed to save the Langfuse content setting.' })
   }
 })
 

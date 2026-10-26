@@ -1,9 +1,6 @@
-import { setTracingDisabled } from '@openai/agents'
 import { getProvider } from './registry.js'
 import { getLlmProvider, getReasoningEffort } from './settings.js'
 import { DEFAULT_REASONING_EFFORT, REASONING_EFFORT_LEVELS } from '../constants.js'
-
-setTracingDisabled(true)
 
 async function resolveProvider() {
   return getProvider(await getLlmProvider())

@@ -6,6 +6,7 @@ import AdminGithub from './AdminGithub/AdminGithub.jsx'
 import AdminGoogleDrive from './AdminGoogleDrive/AdminGoogleDrive.jsx'
 import AdminHelpjuice from './AdminHelpjuice/AdminHelpjuice.jsx'
 import AdminKnowledge from './AdminKnowledge/AdminKnowledge.jsx'
+import AdminLangfuse from './AdminLangfuse/AdminLangfuse.jsx'
 import AdminLlm from './AdminLlm/AdminLlm.jsx'
 import AdminNotion from './AdminNotion/AdminNotion.jsx'
 import AdminSentry from './AdminSentry/AdminSentry.jsx'
@@ -34,4 +35,5 @@ export const SECTIONS = [
   { path: 'sentry', label: 'Sentry', icon: 'sentry', Component: AdminSentry },
   { path: 'betterstack', label: 'Better Stack', icon: 'betterstack', Component: AdminBetterstack },
   { path: 'slack', label: 'Slack', icon: 'slack', Component: AdminSlack },
+  { path: 'langfuse', label: 'Langfuse', icon: 'clock', Component: AdminLangfuse },
 ]

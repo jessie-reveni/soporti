@@ -74,6 +74,13 @@ const getSentryToken = vi.fn()
 const setSentryToken = vi.fn()
 const getSentryOrg = vi.fn()
 const setSentryOrg = vi.fn()
+const getLangfuseConfig = vi.fn()
+const setLangfusePublicKey = vi.fn()
+const setLangfuseSecretKey = vi.fn()
+const setLangfuseHost = vi.fn()
+const setLangfuseMetadataOnly = vi.fn()
+const getLastExportError = vi.fn()
+const resetExportFailure = vi.fn()
 const getBetterstackApiToken = vi.fn()
 const setBetterstackApiToken = vi.fn()
 const getBetterstackConnectHost = vi.fn()
@@ -176,6 +183,14 @@ vi.mock('../betterstack/settings.js', () => ({
   setBetterstackPassword,
   isBetterstackConfigured,
 }))
+vi.mock('../langfuse/settings.js', () => ({
+  getLangfuseConfig,
+  setLangfusePublicKey,
+  setLangfuseSecretKey,
+  setLangfuseHost,
+  setLangfuseMetadataOnly,
+}))
+vi.mock('../langfuse/client.js', () => ({ getLastExportError, resetExportFailure }))
 vi.mock('../helpjuice/settings.js', () => ({
   getHelpjuiceApiKey,
   setHelpjuiceApiKey,
@@ -321,6 +336,13 @@ beforeEach(() => {
   setFigmaToken.mockReset()
   getFigmaCommentsEnabled.mockReset().mockResolvedValue(false)
   setFigmaCommentsEnabled.mockReset().mockResolvedValue(undefined)
+  getLangfuseConfig.mockReset()
+  setLangfusePublicKey.mockReset()
+  setLangfuseSecretKey.mockReset()
+  setLangfuseHost.mockReset()
+  setLangfuseMetadataOnly.mockReset()
+  getLastExportError.mockReset().mockReturnValue(null)
+  resetExportFailure.mockReset()
   getBetterstackApiToken.mockReset()
   setBetterstackApiToken.mockReset()
   getBetterstackConnectHost.mockReset()
@@ -1073,6 +1095,172 @@ describe('PUT /api/admin/config/sentry/org', () => {
     expect((await request(app).put('/api/admin/config/sentry/org').send({ org: 42 })).status).toBe(400)
     expect((await request(app).put('/api/admin/config/sentry/org').send({ org: 'not a slug' })).status).toBe(400)
     expect(setSentryOrg).not.toHaveBeenCalled()
+  })
+})
+
+describe('GET /api/admin/config/langfuse', () => {
+  it('reports key presence without returning the keys, plus the host, content mode and last export error', async () => {
+    getLangfuseConfig.mockResolvedValue({
+      publicKey: 'pk-lf-public',
+      secretKey: 'sk-lf-secret',
+      host: 'https://cloud.langfuse.com',
+      metadataOnly: true,
+    })
+    getLastExportError.mockReturnValue({ status: 401, at: '2026-10-26T10:00:00.000Z' })
+
+    const res = await request(app).get('/api/admin/config/langfuse')
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({
+      publicKeyConfigured: true,
+      secretKeyConfigured: true,
+      host: 'https://cloud.langfuse.com',
+      metadataOnly: true,
+      lastExportError: { status: 401, at: '2026-10-26T10:00:00.000Z' },
+    })
+    expect(JSON.stringify(res.body)).not.toContain('pk-lf-public')
+    expect(JSON.stringify(res.body)).not.toContain('sk-lf-secret')
+  })
+
+  it('reports an unconfigured integration', async () => {
+    getLangfuseConfig.mockResolvedValue({ publicKey: null, secretKey: null, host: null, metadataOnly: false })
+
+    const res = await request(app).get('/api/admin/config/langfuse')
+
+    expect(res.body).toEqual({
+      publicKeyConfigured: false,
+      secretKeyConfigured: false,
+      host: '',
+      metadataOnly: false,
+      lastExportError: null,
+    })
+  })
+
+  it('returns a generic 500 when the settings cannot be read', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    getLangfuseConfig.mockRejectedValue(new Error('db down'))
+
+    const res = await request(app).get('/api/admin/config/langfuse')
+
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ error: 'Failed to read the Langfuse settings.' })
+  })
+})
+
+describe('PUT /api/admin/config/langfuse keys', () => {
+  it.each([
+    { path: 'public-key', field: 'publicKey', flag: 'publicKeyConfigured', setter: setLangfusePublicKey },
+    { path: 'secret-key', field: 'secretKey', flag: 'secretKeyConfigured', setter: setLangfuseSecretKey },
+  ])('saves a trimmed $field and clears it with an empty string', async ({ path, field, flag, setter }) => {
+    const saved = await request(app)
+      .put(`/api/admin/config/langfuse/${path}`)
+      .send({ [field]: '  lf-key-1  ' })
+    expect(saved.status).toBe(200)
+    expect(saved.body).toEqual({ [flag]: true })
+    expect(setter).toHaveBeenCalledTimes(1)
+    expect(setter).toHaveBeenCalledWith('lf-key-1')
+    expect(resetExportFailure).toHaveBeenCalledTimes(1)
+
+    const cleared = await request(app)
+      .put(`/api/admin/config/langfuse/${path}`)
+      .send({ [field]: '' })
+    expect(cleared.body).toEqual({ [flag]: false })
+    expect(setter).toHaveBeenLastCalledWith('')
+  })
+
+  it.each([
+    { path: 'public-key', body: {}, setter: setLangfusePublicKey },
+    { path: 'public-key', body: { publicKey: 42 }, setter: setLangfusePublicKey },
+    { path: 'secret-key', body: { secretKey: 'has spaces inside' }, setter: setLangfuseSecretKey },
+    { path: 'secret-key', body: { secretKey: 'x'.repeat(301) }, setter: setLangfuseSecretKey },
+  ])('rejects $body on $path', async ({ path, body, setter }) => {
+    const res = await request(app).put(`/api/admin/config/langfuse/${path}`).send(body)
+
+    expect(res.status).toBe(400)
+    expect(setter).not.toHaveBeenCalled()
+  })
+
+  it('returns a generic 500 when a key cannot be saved', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    setLangfuseSecretKey.mockRejectedValue(new Error('db down'))
+
+    const res = await request(app).put('/api/admin/config/langfuse/secret-key').send({ secretKey: 'sk-lf-1' })
+
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ error: 'Failed to save the Langfuse secret key.' })
+  })
+})
+
+describe('PUT /api/admin/config/langfuse/host', () => {
+  it.each([
+    { input: ' https://cloud.langfuse.com/ ', stored: 'https://cloud.langfuse.com' },
+    { input: 'https://us.cloud.langfuse.com', stored: 'https://us.cloud.langfuse.com' },
+    { input: 'http://langfuse.internal:3000/observability//', stored: 'http://langfuse.internal:3000/observability' },
+    { input: 'https://[::1]:3000', stored: 'https://[::1]:3000' },
+    { input: '', stored: '' },
+  ])('stores "$input" as "$stored"', async ({ input, stored }) => {
+    const res = await request(app).put('/api/admin/config/langfuse/host').send({ host: input })
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ host: stored })
+    expect(setLangfuseHost).toHaveBeenCalledTimes(1)
+    expect(setLangfuseHost).toHaveBeenCalledWith(stored)
+    expect(resetExportFailure).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    { body: {} },
+    { body: { host: 42 } },
+    { body: { host: 'cloud.langfuse.com' } },
+    { body: { host: 'ftp://cloud.langfuse.com' } },
+    { body: { host: 'https://user:pass@cloud.langfuse.com' } },
+    { body: { host: 'https://cloud.langfuse.com/?x=1' } },
+    { body: { host: 'https://cloud.langfuse.com/#frag' } },
+    { body: { host: `https://${'a'.repeat(300)}.com` } },
+  ])('rejects $body.host', async ({ body }) => {
+    const res = await request(app).put('/api/admin/config/langfuse/host').send(body)
+
+    expect(res.status).toBe(400)
+    expect(setLangfuseHost).not.toHaveBeenCalled()
+    expect(resetExportFailure).not.toHaveBeenCalled()
+  })
+
+  it('returns a generic 500 when the host cannot be saved', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    setLangfuseHost.mockRejectedValue(new Error('db down'))
+
+    const res = await request(app).put('/api/admin/config/langfuse/host').send({ host: 'https://cloud.langfuse.com' })
+
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ error: 'Failed to save the Langfuse host.' })
+  })
+})
+
+describe('PUT /api/admin/config/langfuse/metadata-only', () => {
+  it.each([true, false])('stores %s', async enabled => {
+    const res = await request(app).put('/api/admin/config/langfuse/metadata-only').send({ enabled })
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ metadataOnly: enabled })
+    expect(setLangfuseMetadataOnly).toHaveBeenCalledTimes(1)
+    expect(setLangfuseMetadataOnly).toHaveBeenCalledWith(enabled)
+  })
+
+  it('rejects a non-boolean', async () => {
+    const res = await request(app).put('/api/admin/config/langfuse/metadata-only').send({ enabled: 'yes' })
+
+    expect(res.status).toBe(400)
+    expect(setLangfuseMetadataOnly).not.toHaveBeenCalled()
+  })
+
+  it('returns a generic 500 when the setting cannot be saved', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    setLangfuseMetadataOnly.mockRejectedValue(new Error('db down'))
+
+    const res = await request(app).put('/api/admin/config/langfuse/metadata-only').send({ enabled: true })
+
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ error: 'Failed to save the Langfuse content setting.' })
   })
 })
 
