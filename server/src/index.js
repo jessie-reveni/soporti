@@ -37,6 +37,9 @@ import { countAdmins } from './db/users.js'
 import { announceSetupCode } from './auth/setup-code.js'
 import { getGithubToken, getWebhookSecret } from './github/settings.js'
 import { describeProvider } from './llm/model.js'
+import { registerLangfuseTracing } from './langfuse/tracing.js'
+
+registerLangfuseTracing()
 
 const app = express()
 
