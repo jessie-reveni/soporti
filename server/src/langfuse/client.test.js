@@ -99,8 +99,8 @@ describe('exportSpans mapping', () => {
       expected: {
         'langfuse.observation.type': 'generation',
         'langfuse.observation.model.name': 'claude-sonnet-5-5',
-        'gen_ai.usage.input_tokens': '12',
-        'gen_ai.usage.output_tokens': '7',
+        'gen_ai.usage.input_tokens': 12,
+        'gen_ai.usage.output_tokens': 7,
         'langfuse.observation.input': '[{"role":"user","content":"hi"}]',
         'langfuse.observation.output': '[{"role":"assistant","content":"hello"}]',
       },
@@ -122,8 +122,8 @@ describe('exportSpans mapping', () => {
       expected: {
         'langfuse.observation.type': 'generation',
         'langfuse.observation.model.name': 'gpt-5.5',
-        'gen_ai.usage.input_tokens': '40',
-        'gen_ai.usage.output_tokens': '9',
+        'gen_ai.usage.input_tokens': 40,
+        'gen_ai.usage.output_tokens': 9,
         'langfuse.observation.input':
           '[{"role":"system","content":"You review PRs."},{"role":"user","content":"what broke?"}]',
         'langfuse.observation.output': '[{"type":"message","content":"nothing"}]',
@@ -268,8 +268,8 @@ describe('exportSpans content safety', () => {
     expect(attributesOf(sentSpans()[0])).toEqual({
       'langfuse.observation.type': 'generation',
       'langfuse.observation.model.name': 'claude-sonnet-5-5',
-      'gen_ai.usage.input_tokens': '3',
-      'gen_ai.usage.output_tokens': '4',
+      'gen_ai.usage.input_tokens': 3,
+      'gen_ai.usage.output_tokens': 4,
     })
   })
 
@@ -289,7 +289,7 @@ describe('exportSpans content safety', () => {
   })
 
   it('redacts a secret before truncating so a token cut by the cap never leaks its start', async () => {
-    const output = `${'x'.repeat(31_989)} ${GITHUB_TOKEN}`
+    const output = `${'x'.repeat(15_989)} ${GITHUB_TOKEN} ${'y'.repeat(20_000)}`
 
     await exportSpans([buildSpan({ type: 'function', name: 'read_file', input: '{}', output })])
 
@@ -308,12 +308,31 @@ describe('exportSpans content safety', () => {
     })
   })
 
-  it('truncates oversized content with a marker', async () => {
-    await exportSpans([buildSpan({ type: 'function', name: 'read_file', input: '{}', output: 'x'.repeat(50_000) })])
+  it('truncates oversized content in the middle so the latest message survives the cap', async () => {
+    const input = [
+      { role: 'system', content: 'p'.repeat(50_000) },
+      { role: 'user', content: 'hi' },
+    ]
 
-    const output = attributesOf(sentSpans()[0])['langfuse.observation.output']
-    expect(output).toHaveLength(32_000 + '… [truncated]'.length)
-    expect(output.endsWith('… [truncated]')).toBe(true)
+    await exportSpans([buildSpan({ type: 'generation', model: 'anthropic.messages:claude-sonnet-5-5', input })])
+
+    const sent = attributesOf(sentSpans()[0])['langfuse.observation.input']
+    expect(sent).toHaveLength(32_000 + '\n… [truncated] …\n'.length)
+    expect(sent.startsWith('[{"role":"system","content":"ppp')).toBe(true)
+    expect(sent.includes('\n… [truncated] …\n')).toBe(true)
+    expect(sent.endsWith('{"role":"user","content":"hi"}]')).toBe(true)
+  })
+
+  it('sends token counts as JSON numbers, the only int form older Langfuse versions read', async () => {
+    await exportSpans([
+      buildSpan({ type: 'generation', model: 'openai:gpt-5.5', usage: { input_tokens: 120, output_tokens: 30 } }),
+    ])
+
+    const usage = sentSpans()[0].attributes.filter(({ key }) => key.startsWith('gen_ai.usage.'))
+    expect(usage).toEqual([
+      { key: 'gen_ai.usage.input_tokens', value: { intValue: 120 } },
+      { key: 'gen_ai.usage.output_tokens', value: { intValue: 30 } },
+    ])
   })
 })
 
