@@ -700,6 +700,46 @@ export function saveSentryAuthToken(token, value) {
   })
 }
 
+export function getLangfuseConfig(token) {
+  return request('/api/admin/config/langfuse', { token, errorMessage: 'Failed to load the Langfuse settings' })
+}
+
+export function saveLangfusePublicKey(token, publicKey) {
+  return request('/api/admin/config/langfuse/public-key', {
+    method: 'PUT',
+    token,
+    body: { publicKey },
+    errorMessage: 'Failed to save the public key',
+  })
+}
+
+export function saveLangfuseSecretKey(token, secretKey) {
+  return request('/api/admin/config/langfuse/secret-key', {
+    method: 'PUT',
+    token,
+    body: { secretKey },
+    errorMessage: 'Failed to save the secret key',
+  })
+}
+
+export function saveLangfuseHost(token, host) {
+  return request('/api/admin/config/langfuse/host', {
+    method: 'PUT',
+    token,
+    body: { host },
+    errorMessage: 'Failed to save the host',
+  })
+}
+
+export function saveLangfuseMetadataOnly(token, enabled) {
+  return request('/api/admin/config/langfuse/metadata-only', {
+    method: 'PUT',
+    token,
+    body: { enabled },
+    errorMessage: 'Failed to save the content setting',
+  })
+}
+
 export function getBetterstackConfig(token) {
   return request('/api/admin/config/betterstack', { token, errorMessage: 'Failed to load the Better Stack settings' })
 }

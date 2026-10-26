@@ -61,4 +61,10 @@ export const INTEGRATIONS = [
     name: 'Shortcut',
     desc: 'Fetches stories, epics, status and acceptance criteria so you can track ongoing work from the chat — and, if you switch write access on, files the bug for you, always asking whose name it goes under.',
   },
+  {
+    id: 'langfuse',
+    name: 'Langfuse',
+    icon: 'clock',
+    desc: 'Traces every agent run to your Langfuse, cloud or self-hosted: each model call with its tokens and each tool call with what it returned, so you can see why an answer or a review went wrong. Known secret formats are redacted on the way out, and one switch sends metadata only.',
+  },
 ]
