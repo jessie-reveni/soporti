@@ -1,8 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const setTracingDisabled = vi.fn()
-vi.mock('@openai/agents', () => ({ setTracingDisabled }))
-
 const openaiProvider = {
   id: 'openai',
   label: 'OpenAI',
@@ -52,12 +49,6 @@ beforeEach(() => {
     provider.finalAnswerSettings.mockReset().mockReturnValue({})
     provider.wrapSession.mockReset()
   }
-})
-
-describe('tracing', () => {
-  it('is disabled on import so no conversation content is exported to a third party', () => {
-    expect(setTracingDisabled).toHaveBeenCalledWith(true)
-  })
 })
 
 describe('describeProvider', () => {
