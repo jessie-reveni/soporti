@@ -7,7 +7,8 @@ const EXPORT_TIMEOUT_MS = 15_000
 const FAILURE_PAUSE_MS = 60_000
 const MAX_CONTENT_CHARS = 32_000
 const MAX_SPANS_PER_REQUEST = 20
-const TRUNCATION_MARKER = '… [truncated]'
+const TRUNCATION_MARKER = '\n… [truncated] …\n'
+const KEPT_HALF_CHARS = MAX_CONTENT_CHARS / 2
 const GENERIC_SPAN_ERROR = 'Span failed'
 const SERVICE_NAME = 'soporti'
 const SPAN_KIND_INTERNAL = 1
@@ -123,7 +124,7 @@ function contentText(value) {
   const text = typeof redacted === 'string' ? redacted : JSON.stringify(redacted)
   if (text.length <= MAX_CONTENT_CHARS) return text
 
-  return `${text.slice(0, MAX_CONTENT_CHARS)}${TRUNCATION_MARKER}`
+  return `${text.slice(0, KEPT_HALF_CHARS)}${TRUNCATION_MARKER}${text.slice(-KEPT_HALF_CHARS)}`
 }
 
 function stringAttribute(key, value) {
@@ -131,7 +132,7 @@ function stringAttribute(key, value) {
 }
 
 function intAttribute(key, value) {
-  return { key, value: { intValue: String(value) } }
+  return { key, value: { intValue: value } }
 }
 
 function contentAttributes(fields, metadataOnly) {
