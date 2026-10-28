@@ -8,6 +8,9 @@ const UNDEFINED_COLUMN_CODE = '42703'
 const SYSTEM_SCHEMAS = ['information_schema', 'pg_catalog', 'pg_toast']
 const MAX_SUGGESTED_TABLES = 5
 const IDENTIFIER_RE = /[a-z_][a-z0-9_$]*/g
+const BEGIN_READ_ONLY = 'BEGIN READ ONLY'
+const ROLLBACK = 'ROLLBACK'
+const EXTENDED_QUERY_MODE = 'extended'
 let pool = null
 let poolConnString = null
 
@@ -221,6 +224,28 @@ async function undefinedColumnError(err, sql) {
   return Object.assign(new Error(message, { cause: err }), { code: err.code })
 }
 
+function logConnectionError(err) {
+  console.error(`${LOG_PREFIX} Connection error during a query:`, err.message)
+}
+
+async function queryReadOnly(text) {
+  const db = await getPool()
+  const client = await db.connect()
+  client.on('error', logConnectionError)
+
+  try {
+    await client.query(BEGIN_READ_ONLY)
+    return await client.query({ text, queryMode: EXTENDED_QUERY_MODE })
+  } finally {
+    const rollbackError = await client.query(ROLLBACK).then(
+      () => undefined,
+      err => err
+    )
+    client.removeListener('error', logConnectionError)
+    client.release(rollbackError)
+  }
+}
+
 export async function runQuery(sql) {
   console.log(`${LOG_PREFIX} runQuery: ${sql.slice(0, 200)}${sql.length > 200 ? '...' : ''}`)
   const trimmed = sql.trim()
@@ -235,8 +260,7 @@ export async function runQuery(sql) {
     const limited = trimmed.replace(/;+\s*$/, '')
     const query = `SELECT * FROM (${limited}) AS _q LIMIT ${maxRows}`
 
-    const db = await getPool()
-    const { rows, fields } = await db.query(query)
+    const { rows, fields } = await queryReadOnly(query)
     console.log(`${LOG_PREFIX} runQuery → ${rows.length} rows, ${fields.length} columns`)
     return {
       columns: fields.map(f => f.name),
