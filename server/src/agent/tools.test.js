@@ -336,6 +336,12 @@ describe('buildRepoTools repo guard', () => {
     expect(getFile.parameters.parse({ repo: 'org/app', path: 'a.js', centerLine: 0 }).centerLine).toBe(0)
   })
 
+  it('get_file_contents accepts limit 0 as "the default"', () => {
+    const getFile = buildRepoTools().find(t => t.name === 'get_file_contents')
+
+    expect(getFile.parameters.parse({ repo: 'org/app', path: 'a.js', limit: 0 }).limit).toBe(0)
+  })
+
   it('find_files defaults to a modest result count while search_code keeps full coverage', () => {
     const tools = buildRepoTools()
     const find = tools.find(t => t.name === 'find_files')
