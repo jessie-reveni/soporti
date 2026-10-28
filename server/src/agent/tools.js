@@ -101,11 +101,11 @@ export function buildRepoTools(allowedRepos = null) {
         limit: z
           .number()
           .int()
-          .min(1)
+          .min(0)
           .max(MAX_FILE_LINES)
           .default(DEFAULT_FILE_LINES)
           .describe(
-            `Max lines to return. Default ${DEFAULT_FILE_LINES}, max ${MAX_FILE_LINES}. Only raise it when a targeted window is not enough.`
+            `Max lines to return. Default ${DEFAULT_FILE_LINES}, max ${MAX_FILE_LINES}; 0 means the default. Only raise it when a targeted window is not enough.`
           ),
       }),
       execute: guard(async input => {
