@@ -823,16 +823,15 @@ export function buildZendeskTools(userId, writes) {
             'Zendesk search query without `type:ticket`, e.g. "refund status<solved order_by:updated_at sort:desc".'
           ),
         page: z
-          .number()
-          .int()
+          .union([z.number().int(), z.enum([''])])
           .nullable()
           .default(null)
           .describe(
-            'Page of results to fetch (1 to 10); pass `nextPage` from the previous result. Null for the first.'
+            'Page of results to fetch (1 to 10); pass `nextPage` from the previous result. Null or an empty string for the first.'
           ),
       }),
       execute: async input => {
-        const result = await zendesk.searchTickets(userId, input.query, input.page ?? 1)
+        const result = await zendesk.searchTickets(userId, input.query, input.page || 1)
         return JSON.stringify(result)
       },
     }),
