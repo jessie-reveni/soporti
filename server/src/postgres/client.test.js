@@ -449,6 +449,7 @@ describe('runQuery on a missing table', () => {
 
   beforeEach(() => {
     mockQuery.mockReset()
+    mockClientQuery.mockReset()
     vi.spyOn(console, 'error').mockImplementation(() => {})
   })
 
@@ -481,27 +482,29 @@ describe('runQuery on a missing table', () => {
       message: 'relation "nope" does not exist No table name contains "nope": list them with list_database_tables.',
     },
   ])('$kind', async ({ error, lookup, searched, message }) => {
-    mockQuery.mockRejectedValueOnce(error).mockResolvedValueOnce(lookup)
+    stubReadOnlyQuery(error)
+    mockQuery.mockResolvedValueOnce(lookup)
 
     const failure = await runQuery('SELECT * FROM stores').catch(err => err)
 
     expect(failure.message).toBe(message)
     expect(failure.code).toBe('42P01')
     expect(failure.cause).toBe(error)
-    expect(mockQuery).toHaveBeenCalledTimes(2)
-    expect(mockQuery.mock.calls[1][1][0]).toBe(searched)
+    expect(mockQuery).toHaveBeenCalledTimes(1)
+    expect(mockQuery.mock.calls[0][1][0]).toBe(searched)
   })
 
   it('leaves a missing FROM-clause entry unchanged', async () => {
     const alias = Object.assign(new Error('missing FROM-clause entry for table "o"'), { code: '42P01' })
-    mockQuery.mockRejectedValueOnce(alias)
+    stubReadOnlyQuery(alias)
 
     await expect(runQuery('SELECT o.id FROM orders')).rejects.toBe(alias)
-    expect(mockQuery).toHaveBeenCalledTimes(1)
+    expect(mockQuery).not.toHaveBeenCalled()
   })
 
   it('keeps the hint short when the table lookup itself fails', async () => {
-    mockQuery.mockRejectedValueOnce(undefinedTable('stores')).mockRejectedValueOnce(new Error('permission denied'))
+    stubReadOnlyQuery(undefinedTable('stores'))
+    mockQuery.mockRejectedValueOnce(new Error('permission denied'))
 
     const failure = await runQuery('SELECT * FROM stores').catch(err => err)
 
@@ -514,24 +517,25 @@ describe('runQuery on a missing table', () => {
 describe('runQuery cancelled by the database', () => {
   beforeEach(() => {
     mockQuery.mockReset()
+    mockClientQuery.mockReset()
     vi.spyOn(console, 'error').mockImplementation(() => {})
   })
 
   it('tells the agent how to narrow a query that hit the statement timeout', async () => {
     const timeout = Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' })
-    mockQuery.mockRejectedValueOnce(timeout)
+    stubReadOnlyQuery(timeout)
 
     const failure = await runQuery("SELECT * FROM events WHERE type ILIKE '%refund%'").catch(err => err)
 
     expect(failure.message).toMatch(/^canceling statement due to statement timeout The query ran longer/)
     expect(failure.code).toBe('57014')
     expect(failure.cause).toBe(timeout)
-    expect(mockQuery).toHaveBeenCalledTimes(1)
+    expect(mockQuery).not.toHaveBeenCalled()
   })
 
   it('leaves any other cancellation unchanged', async () => {
     const cancelled = Object.assign(new Error('canceling statement due to user request'), { code: '57014' })
-    mockQuery.mockRejectedValueOnce(cancelled)
+    stubReadOnlyQuery(cancelled)
 
     await expect(runQuery('SELECT 1')).rejects.toBe(cancelled)
   })
