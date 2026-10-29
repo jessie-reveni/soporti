@@ -1352,6 +1352,16 @@ describe('buildZendeskTools', () => {
     expect(zendeskMod.searchTickets).toHaveBeenCalledWith(7, 'tags:refund', 2)
   })
 
+  it('reads an empty page from the model as the first page', async () => {
+    const zendeskMod = await import('../zendesk/client.js')
+    zendeskMod.searchTickets.mockResolvedValue({ query: 'tags:refund', count: 0, tickets: [], truncated: false })
+
+    const [, searchTickets] = buildZendeskTools(7, false)
+    await searchTickets.execute(searchTickets.parameters.parse({ query: 'tags:refund', page: '' }))
+
+    expect(zendeskMod.searchTickets).toHaveBeenCalledWith(7, 'tags:refund', 1)
+  })
+
   it('lists the views of the user the tools were built for', async () => {
     const zendeskMod = await import('../zendesk/client.js')
     zendeskMod.listViews.mockResolvedValue({ views: [{ id: 42, title: 'Tier 2', personal: false }], truncated: false })
